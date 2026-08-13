@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { scrambleLetters } from '../src/scramble';
 import { mulberry32 } from '../src/rng';
-import { fakeRng } from './testRng';
 
 function sortedChars(s: string): string {
   return s.split('').sort().join('');
+}
+
+function reverseString(s: string): string {
+  return s.split('').reverse().join('');
 }
 
 describe('scrambleLetters', () => {
@@ -20,19 +23,20 @@ describe('scrambleLetters', () => {
     expect(a).toBe(b);
   });
 
-  it('re-rolls when the shuffle lands on an avoided word', () => {
-    // First shuffle (rng -> 0) swaps positions [1,0]: "ab" -> "ba", which is avoided.
-    // Second shuffle (rng -> 0.99) swaps positions [1,1] (no-op): stays "ab".
-    const rng = fakeRng([0, 0.99]);
-    const result = scrambleLetters('ab', rng, ['ba']);
-    expect(result).toBe('ab');
+  it('avoids the exact word and its exact reverse when enough arrangements exist', () => {
+    const word = 'sprint'; // 6 distinct letters -> plenty of arrangements to retry into
+    for (let seed = 1; seed <= 30; seed++) {
+      const result = scrambleLetters(word, mulberry32(seed), [word]);
+      expect(result).not.toBe(word);
+      expect(result).not.toBe(reverseString(word));
+    }
   });
 
-  it('gives up after bounded retries rather than looping forever', () => {
-    // Every call returns 0, so shuffleOnce always swaps to "ba" — avoiding it
-    // is impossible, but the function must still return rather than hang.
-    const rng = () => 0;
-    const result = scrambleLetters('ab', rng, ['ba']);
-    expect(sortedChars(result)).toBe('ab');
+  it('falls back to the last attempt when avoidance is impossible (2-letter set)', () => {
+    // Only two arrangements exist for a 2-letter set: the word itself and its
+    // exact reverse — both are "too close" by definition, so there's no
+    // escaping it. rng always 0 -> shuffleOnce always swaps to "ba".
+    const result = scrambleLetters('ab', () => 0, ['ba']);
+    expect(result).toBe('ba');
   });
 });

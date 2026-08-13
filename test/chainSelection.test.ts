@@ -77,12 +77,18 @@ describe('daily selection', () => {
     expect(chains9).toContain(picked);
   });
 
-  it('dailyRng produces the same sequence for the same date', () => {
-    const rngA = dailyRng('2026-08-13');
+  it('dailyRng produces the same sequence for the same date and rung index', () => {
+    const rngA = dailyRng('2026-08-13', 3);
     const seqA = [rngA(), rngA()];
-    const rngB = dailyRng('2026-08-13');
+    const rngB = dailyRng('2026-08-13', 3);
     const seqB = [rngB(), rngB()];
     expect(seqB).toEqual(seqA);
+  });
+
+  it('dailyRng differs across rung indices for the same date', () => {
+    const rngRung0 = dailyRng('2026-08-13', 0);
+    const rngRung1 = dailyRng('2026-08-13', 1);
+    expect(rngRung0()).not.toBe(rngRung1());
   });
 });
 

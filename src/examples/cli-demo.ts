@@ -16,18 +16,20 @@ import {
   pickDailyChain,
   submitGuess,
   useHint,
-} from '..';
+} from '../node';
 
 function main(): void {
   const dateStr = '2026-08-13';
   const chains9 = loadDailyPool();
   const chain = pickDailyChain(chains9, dateStr);
-  const rng = dailyRng(dateStr);
 
   console.log(`Daily puzzle for ${dateStr}: ${chain.rungCount} rungs`);
   console.log(`(chosen deterministically from ${chains9.length} rung-9 chains)\n`);
 
-  let state = initGame(chain, rng);
+  // Each rung gets its own independently-seeded RNG (see dailyRng), so the
+  // scramble at any given rung is the same for every player regardless of
+  // how the rest of their session played out.
+  let state = initGame(chain, dailyRng(dateStr, 0));
 
   while (true) {
     const rungIndex = state.currentRungIndex;
@@ -58,7 +60,7 @@ function main(): void {
     if (!canAdvance(state)) {
       throw new Error('Expected to be able to advance after a correct guess');
     }
-    state = advance(state, rng);
+    state = advance(state, dailyRng(dateStr, rungIndex + 1));
 
     if (isComplete(state)) {
       break;

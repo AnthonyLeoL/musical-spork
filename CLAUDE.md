@@ -144,8 +144,9 @@ script changes.
 playthrough; `chainSelection.ts` picks the daily (date-seeded, same chain+scrambles for every
 player) and freeplay (level → rung count, starts at 3 and grows) chains; `shareScore.ts` builds
 the `rung -> rung -> ...` share string with `(hint)` markers. The engine never touches storage —
-callers persist whatever `GameState`/`FreeplayProgress` they're handed back. `src/loaders.ts` is
-the only module that touches `fs`, so the rest stays portable to a browser front-end later.
+callers persist whatever `GameState`/`FreeplayProgress` they're handed back. The browser-safe barrel is `src/index.ts` (no `fs`); `src/loaders.ts` (fs-based) is only
+re-exported from `src/node.ts`, which Node-side code (the CLI demo) imports instead — this split
+is what lets the browser UI below import the engine directly with no bundling issues.
 
 This is the one part of the repo with real tooling: `package.json` (TypeScript + Vitest as
 devDependencies, no runtime deps), `tsconfig.json`, `test/` (Vitest, mirrors `src/`), and
@@ -159,13 +160,38 @@ npm test        # vitest run
 npm run demo    # scripted daily-puzzle playthrough, printed to console
 ```
 
+## Web UI
+
+`web/` is a Vite + React + TypeScript app (npm workspace, linked to the root package as
+`anagram-game-engine`) that plays the engine — Daily and Freeplay tabs, drag-to-reorder letter
+tiles (Pointer Events, no DnD library), a Hint button, and a Share-score button that copies
+`buildShareString`'s output to the clipboard. `web/src/game/use{Daily,Freeplay}Puzzle.ts` are the
+two hooks that wire the stateless engine to React state + `localStorage` (`web/src/data/storage.ts`)
+— this is the concrete "caller persists whatever state it gets back" side of the engine's
+stateless contract. `web/src/data/dataClient.ts` fetches the pool JSON as static assets from
+`web/public/data/` (symlinked to the repo-root files, so nothing is duplicated on disk) and caches
+each rung-count file in memory per session.
+
+Daily puzzles are seeded per-rung (`dailyRng(dateStr, rungIndex)`, not one continuous RNG stream)
+specifically so a page reload mid-game still lands on the same scramble everyone else sees at that
+rung. Freeplay has no such determinism requirement and uses `Math.random`.
+
+```
+npm install        # from repo root — installs both the engine and web/ (npm workspaces)
+cd web && npm run dev      # dev server
+cd web && npm run build    # type-check + production build
+```
+
 ## Not yet done / open questions
 
-- No front-end exists yet — the engine above has no UI, just game logic.
 - Profanity filtering was raised but never decided on (dictionary words like "shit" that are
   valid Scrabble words still pass through the pipeline untouched).
 - `words_alpha.txt` is mentioned as an unused leftover from an earlier iteration but is no longer
   present in the repo — this note is stale.
+- The web UI has no visual design pass — plain functional styling, meant to be replaced.
+- No automated browser/e2e test coverage for the web app yet (no chromium-cli/Playwright in this
+  environment when it was built); the engine underneath has full unit coverage, but the UI itself
+  was only verified via type-check + production build + manual dev-server checks.
 
 # Game details
 

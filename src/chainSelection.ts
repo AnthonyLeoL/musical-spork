@@ -42,9 +42,17 @@ function seedForDate(dateStr: string): number {
   return hashString(dateStr);
 }
 
-/** Seeded RNG for a given day — feed this into `initGame`/`advance` for the daily puzzle. */
-export function dailyRng(dateStr: string): Rng {
-  return mulberry32(seedForDate(dateStr));
+/**
+ * Seeded RNG for a given day, one instance per rung (`rungIndex` is the
+ * chain's 0-based rung index being scrambled). Deriving each rung's seed
+ * independently — rather than sharing one continuous RNG stream across the
+ * whole game — means a player resuming a saved daily game after a reload
+ * still lands on the exact same scramble at every rung as everyone else,
+ * with no dependency on how much of the RNG stream they'd already consumed
+ * before reloading.
+ */
+export function dailyRng(dateStr: string, rungIndex: number): Rng {
+  return mulberry32(hashString(`${dateStr}#rung${rungIndex}`));
 }
 
 /**

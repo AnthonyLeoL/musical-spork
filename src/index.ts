@@ -26,5 +26,8 @@ export {
 } from './gameEngine';
 export { buildShareString } from './shareScore';
 export { initialFreeplayProgress, recordCompletion } from './freeplayProgress';
-export { loadRungCountFile, loadDailyPool, loadFullPool } from './loaders';
-export type { SplitRungCount } from './loaders';
+
+// Note: `loaders.ts` (fs-based) is intentionally NOT re-exported here — this
+// barrel has no `fs` dependency so it's safe to import from a browser
+// front-end. Node-side code (the CLI demo, future scripts) should import
+// from './node' instead, which re-exports everything here plus the loaders.
