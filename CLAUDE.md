@@ -137,11 +137,48 @@ node split_progressive_anagrams.js
 Each step's output is checked in, so this only needs re-running if an input file or an earlier
 script changes.
 
+## Game engine (TypeScript)
+
+`src/` holds a pure, stateless TypeScript game engine consuming the pipeline's JSON output —
+`initGame`/`submitGuess`/`advance`/`useHint`/`getDisplayLetters`/`isComplete` drive one
+playthrough; `chainSelection.ts` picks the daily (date-seeded, same chain+scrambles for every
+player) and freeplay (level → rung count, starts at 3 and grows) chains; `shareScore.ts` builds
+the `rung -> rung -> ...` share string with `(hint)` markers. The engine never touches storage —
+callers persist whatever `GameState`/`FreeplayProgress` they're handed back. `src/loaders.ts` is
+the only module that touches `fs`, so the rest stays portable to a browser front-end later.
+
+This is the one part of the repo with real tooling: `package.json` (TypeScript + Vitest as
+devDependencies, no runtime deps), `tsconfig.json`, `test/` (Vitest, mirrors `src/`), and
+`src/examples/cli-demo.ts` (a scripted playthrough — `npm run demo`). The pipeline `.js` scripts
+above are untouched and still run directly via plain `node`.
+
+```
+npm install
+npm run build   # tsc -> dist/
+npm test        # vitest run
+npm run demo    # scripted daily-puzzle playthrough, printed to console
+```
+
 ## Not yet done / open questions
 
-- No game/front-end exists yet — this repo is data-pipeline only.
-- No `package.json` — nothing to install, scripts run directly with `node`.
+- No front-end exists yet — the engine above has no UI, just game logic.
 - Profanity filtering was raised but never decided on (dictionary words like "shit" that are
   valid Scrabble words still pass through the pipeline untouched).
-- `words_alpha.txt` is an unused leftover from an earlier iteration (before switching to
-  `dictionary.txt` for proper-noun filtering) — safe to ignore or delete, nothing reads it.
+- `words_alpha.txt` is mentioned as an unused leftover from an earlier iteration but is no longer
+  present in the repo — this note is stale.
+
+# Game details
+
+user is given three letters to anagram. Once the user has succesfully anagrammed the letters into
+a valid word, they can then
+A: continue to anagram to find other words (if they exist) or
+B: progress and add a new letter - then repeat.
+Repeats until the user has gotten to the last "rung" of the anagram (that is, there are no more
+letters that can be added to create a new valid word)
+
+there will be two sections, a "daily" play, which uses a new rungcount 9 progressive anagram.
+And a freeplay.
+Free play should start with short words and shortnrungs, and gradually increase in both as users play. Progress and scores should be saved locally.
+Users should be able to share their daily "score" (score for now just copy pastes the scrambled words in order. e.g. "art" -> "sart"->"ysrart")
+
+User's should also be able to hit a HINT button that will lock a letter in it's correct position. subsequant hints should lock more letters in the correct position. Hints should also show in the users score.
