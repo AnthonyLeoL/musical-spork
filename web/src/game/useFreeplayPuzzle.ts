@@ -10,10 +10,12 @@ import {
   pickFreeplayChain,
   recordCompletion,
   rungCountForLevel,
+  setCurrentOrder,
   submitGuess,
   useHint as engineUseHint,
   type FreeplayProgress,
   type GameState,
+  type GuessOutcome,
 } from 'anagram-game-engine';
 import { loadRungCountFile } from '../data/dataClient';
 import {
@@ -23,8 +25,10 @@ import {
   saveFreeplayGame,
   saveFreeplayProgress,
 } from '../data/storage';
-import { buildTiles, tilesToGuess, type Tile } from './tiles';
+import { buildTiles, insertTile, tilesToGuess, unlockTiles, type Tile } from './tiles';
 import type { PuzzleController } from './types';
+
+const FEEDBACK_DURATION_MS = 1200;
 
 async function pickNewChain(progress: FreeplayProgress): Promise<GameState> {
   const rungCount = rungCountForLevel(progress.level);
@@ -35,24 +39,35 @@ async function pickNewChain(progress: FreeplayProgress): Promise<GameState> {
 
 export function useFreeplayPuzzle(): PuzzleController {
   const stateRef = useRef<GameState | null>(null);
+  const tilesRef = useRef<Tile[]>([]);
   const progressRef = useRef<FreeplayProgress>(initialFreeplayProgress());
   const [state, setState] = useState<GameState | null>(null);
   const [progress, setProgress] = useState<FreeplayProgress>(progressRef.current);
   const [tiles, setTiles] = useState<Tile[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [checkFeedback, setCheckFeedback] = useState<GuessOutcome | null>(null);
 
-  function commitState(next: GameState): void {
+  function persistState(next: GameState): void {
     stateRef.current = next;
     setState(next);
-    setTiles(buildTiles(next));
     saveFreeplayGame(next);
   }
 
-  function commitProgress(next: FreeplayProgress): void {
+  function persistProgress(next: FreeplayProgress): void {
     progressRef.current = next;
     setProgress(next);
     saveFreeplayProgress(next);
+  }
+
+  function setTilesAndRef(next: Tile[]): void {
+    tilesRef.current = next;
+    setTiles(next);
+  }
+
+  function flashFeedback(outcome: GuessOutcome): void {
+    setCheckFeedback(outcome);
+    setTimeout(() => setCheckFeedback(null), FEEDBACK_DURATION_MS);
   }
 
   useEffect(() => {
@@ -65,11 +80,17 @@ export function useFreeplayPuzzle(): PuzzleController {
 
         const savedGame = loadFreeplayGame();
         if (savedGame) {
-          if (!cancelled) commitState(savedGame);
+          if (!cancelled) {
+            persistState(savedGame);
+            setTilesAndRef(buildTiles(savedGame));
+          }
           return;
         }
         const fresh = await pickNewChain(savedProgress);
-        if (!cancelled) commitState(fresh);
+        if (!cancelled) {
+          persistState(fresh);
+          setTilesAndRef(buildTiles(fresh));
+        }
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : 'Failed to load freeplay puzzle');
       } finally {
@@ -83,29 +104,53 @@ export function useFreeplayPuzzle(): PuzzleController {
   }, []);
 
   function onReorder(newTiles: Tile[]): void {
-    setTiles(newTiles);
+    setTilesAndRef(newTiles);
     const current = stateRef.current;
     if (!current || current.status !== 'in-progress') return;
-    const guess = tilesToGuess(newTiles);
-    const result = submitGuess(current, guess);
+    try {
+      persistState(setCurrentOrder(current, tilesToGuess(newTiles)));
+    } catch {
+      // Shouldn't happen — the rack never lets a locked tile move.
+    }
+  }
+
+  function onCheck(): void {
+    const current = stateRef.current;
+    if (!current || current.status !== 'in-progress') return;
+    const result = submitGuess(current, tilesToGuess(tilesRef.current));
+    flashFeedback(result.outcome);
     if (result.outcome === 'correct') {
-      commitState(result.state);
+      // Deliberately don't rebuild `tiles` — the player's own arrangement
+      // (which just spelled the word) stays on screen as-is. Do release any
+      // hint lock, though (the engine already reset hintsUsed to 0 — this
+      // just brings the tile row's `locked` flags in line with that, same
+      // idea as insertTile, without touching identity/order).
+      persistState(result.state);
+      setTilesAndRef(unlockTiles(tilesRef.current));
+      if (engineIsComplete(result.state)) {
+        persistProgress(recordCompletion(progressRef.current, result.state.chain));
+      }
     }
   }
 
   function onHint(): void {
     const current = stateRef.current;
     if (!current) return;
-    commitState(engineUseHint(current));
+    const next = engineUseHint(current, defaultRng());
+    persistState(next);
+    setTilesAndRef(buildTiles(next));
   }
 
   function onAdvance(): void {
     const current = stateRef.current;
     if (!current || !engineCanAdvance(current)) return;
-    const next = advance(current, defaultRng());
-    commitState(next);
-    if (engineIsComplete(next)) {
-      commitProgress(recordCompletion(progressRef.current, next.chain));
+    const { state: next, insertedIndex } = advance(current, defaultRng());
+    persistState(next);
+    if (insertedIndex !== null) {
+      const rung = next.chain.rungs[next.currentRungIndex]!;
+      setTilesAndRef(insertTile(tilesRef.current, rung.addedLetter!, insertedIndex));
+    } else {
+      setTilesAndRef(buildTiles(next));
     }
   }
 
@@ -115,7 +160,8 @@ export function useFreeplayPuzzle(): PuzzleController {
     try {
       clearFreeplayGame();
       const fresh = await pickNewChain(progressRef.current);
-      commitState(fresh);
+      persistState(fresh);
+      setTilesAndRef(buildTiles(fresh));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load the next puzzle');
     } finally {
@@ -135,11 +181,13 @@ export function useFreeplayPuzzle(): PuzzleController {
     rungCount: state?.chain.rungCount ?? 0,
     foundWords: currentProgress?.foundWords ?? [],
     wordsAtRung: currentRung?.words.length ?? 0,
-    hintsUsedThisRung: currentProgress?.hintsUsed ?? 0,
+    hintsUsedThisRung: currentProgress?.hintsUsedTotal ?? 0,
     canAdvance: state ? engineCanAdvance(state) : false,
     isComplete: state ? engineIsComplete(state) : false,
     shareString: state ? buildShareString(state) : '',
     onReorder,
+    onCheck,
+    checkFeedback,
     onHint,
     onAdvance,
     onNextPuzzle,

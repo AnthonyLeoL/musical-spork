@@ -48,23 +48,32 @@ function main(): void {
     state = correct.state;
     console.log(`  guess "${answer}"${' '.repeat(Math.max(0, 22 - answer.length))} -> ${correct.outcome}`);
 
-    const dupe = submitGuess(state, answer);
-    console.log(`  guess "${answer}" again${' '.repeat(Math.max(0, 16 - answer.length))} -> ${dupe.outcome}`);
+    // Once a last-rung guess completes the game, further guesses are
+    // rejected outright rather than reported as "alreadyFound" — skip the
+    // repeat-guess demo in that case so the log doesn't misread as a bug.
+    if (!isComplete(state)) {
+      const dupe = submitGuess(state, answer);
+      console.log(`  guess "${answer}" again${' '.repeat(Math.max(0, 16 - answer.length))} -> ${dupe.outcome}`);
+    }
 
     // Demonstrate a hint on rung 2 specifically.
     if (rungIndex === 1) {
-      state = useHint(state);
+      state = useHint(state, dailyRng(dateStr, rungIndex));
       console.log(`  used a hint -> locked letters: ${getDisplayLetters(state).join('')}`);
+    }
+
+    // A correct guess at the chain's last rung completes the game right
+    // away (see submitGuess) — nothing left to advance into.
+    if (isComplete(state)) {
+      break;
     }
 
     if (!canAdvance(state)) {
       throw new Error('Expected to be able to advance after a correct guess');
     }
-    state = advance(state, dailyRng(dateStr, rungIndex + 1));
-
-    if (isComplete(state)) {
-      break;
-    }
+    const { state: advanced, insertedIndex } = advance(state, dailyRng(dateStr, rungIndex + 1));
+    state = advanced;
+    console.log(`  advanced -> new letter landed at index ${insertedIndex}`);
   }
 
   console.log(`\nComplete! Reached ${state.progressByRung.length} rungs.`);

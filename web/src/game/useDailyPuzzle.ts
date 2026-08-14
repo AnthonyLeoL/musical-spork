@@ -4,32 +4,48 @@ import {
   buildShareString,
   canAdvance as engineCanAdvance,
   dailyRng,
+  defaultRng,
   isComplete as engineIsComplete,
   initGame,
   pickDailyChain,
+  setCurrentOrder,
   submitGuess,
   useHint as engineUseHint,
   type GameState,
+  type GuessOutcome,
 } from 'anagram-game-engine';
 import { loadDailyPool } from '../data/dataClient';
 import { loadDailyGame, saveDailyGame } from '../data/storage';
 import { todayUtcDateString } from './date';
-import { buildTiles, tilesToGuess, type Tile } from './tiles';
+import { buildTiles, insertTile, tilesToGuess, unlockTiles, type Tile } from './tiles';
 import type { PuzzleController } from './types';
+
+const FEEDBACK_DURATION_MS = 1200;
 
 export function useDailyPuzzle(): PuzzleController {
   const dateStr = useMemo(() => todayUtcDateString(), []);
   const stateRef = useRef<GameState | null>(null);
+  const tilesRef = useRef<Tile[]>([]);
   const [state, setState] = useState<GameState | null>(null);
   const [tiles, setTiles] = useState<Tile[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [checkFeedback, setCheckFeedback] = useState<GuessOutcome | null>(null);
 
-  function commit(next: GameState): void {
+  function persist(next: GameState): void {
     stateRef.current = next;
     setState(next);
-    setTiles(buildTiles(next));
     saveDailyGame(dateStr, next);
+  }
+
+  function setTilesAndRef(next: Tile[]): void {
+    tilesRef.current = next;
+    setTiles(next);
+  }
+
+  function flashFeedback(outcome: GuessOutcome): void {
+    setCheckFeedback(outcome);
+    setTimeout(() => setCheckFeedback(null), FEEDBACK_DURATION_MS);
   }
 
   useEffect(() => {
@@ -38,13 +54,19 @@ export function useDailyPuzzle(): PuzzleController {
       try {
         const saved = loadDailyGame(dateStr);
         if (saved) {
-          if (!cancelled) commit(saved);
+          if (!cancelled) {
+            persist(saved);
+            setTilesAndRef(buildTiles(saved));
+          }
           return;
         }
         const chains9 = await loadDailyPool();
         const chain = pickDailyChain(chains9, dateStr);
         const fresh = initGame(chain, dailyRng(dateStr, 0));
-        if (!cancelled) commit(fresh);
+        if (!cancelled) {
+          persist(fresh);
+          setTilesAndRef(buildTiles(fresh));
+        }
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : 'Failed to load daily puzzle');
       } finally {
@@ -60,27 +82,56 @@ export function useDailyPuzzle(): PuzzleController {
   }, []);
 
   function onReorder(newTiles: Tile[]): void {
-    setTiles(newTiles);
+    setTilesAndRef(newTiles);
     const current = stateRef.current;
     if (!current || current.status !== 'in-progress') return;
-    const guess = tilesToGuess(newTiles);
-    const result = submitGuess(current, guess);
+    try {
+      persist(setCurrentOrder(current, tilesToGuess(newTiles)));
+    } catch {
+      // Shouldn't happen — the rack never lets a locked tile move — but
+      // don't let a defensive throw break the drag interaction.
+    }
+  }
+
+  function onCheck(): void {
+    const current = stateRef.current;
+    if (!current || current.status !== 'in-progress') return;
+    const result = submitGuess(current, tilesToGuess(tilesRef.current));
+    flashFeedback(result.outcome);
     if (result.outcome === 'correct') {
-      commit(result.state);
+      // Deliberately don't rebuild `tiles` — the player's own arrangement
+      // (which just spelled the word) stays on screen as-is. Do release any
+      // hint lock, though (the engine already reset hintsUsed to 0 — this
+      // just brings the tile row's `locked` flags in line with that, same
+      // idea as insertTile, without touching identity/order).
+      persist(result.state);
+      setTilesAndRef(unlockTiles(tilesRef.current));
     }
   }
 
   function onHint(): void {
     const current = stateRef.current;
     if (!current) return;
-    commit(engineUseHint(current));
+    // Hints only affect this player's own local view — the share string is
+    // built from each rung's *initial* scramble, unaffected by later hints
+    // — so there's no cross-player-fairness reason for this to be seeded.
+    const next = engineUseHint(current, defaultRng());
+    persist(next);
+    setTilesAndRef(buildTiles(next));
   }
 
   function onAdvance(): void {
     const current = stateRef.current;
     if (!current || !engineCanAdvance(current)) return;
     const rng = dailyRng(dateStr, current.currentRungIndex + 1);
-    commit(advance(current, rng));
+    const { state: next, insertedIndex } = advance(current, rng);
+    persist(next);
+    if (insertedIndex !== null) {
+      const rung = next.chain.rungs[next.currentRungIndex]!;
+      setTilesAndRef(insertTile(tilesRef.current, rung.addedLetter!, insertedIndex));
+    } else {
+      setTilesAndRef(buildTiles(next));
+    }
   }
 
   const currentProgress = state?.progressByRung[state.currentRungIndex];
@@ -95,11 +146,13 @@ export function useDailyPuzzle(): PuzzleController {
     rungCount: state?.chain.rungCount ?? 0,
     foundWords: currentProgress?.foundWords ?? [],
     wordsAtRung: currentRung?.words.length ?? 0,
-    hintsUsedThisRung: currentProgress?.hintsUsed ?? 0,
+    hintsUsedThisRung: currentProgress?.hintsUsedTotal ?? 0,
     canAdvance: state ? engineCanAdvance(state) : false,
     isComplete: state ? engineIsComplete(state) : false,
     shareString: state ? buildShareString(state) : '',
     onReorder,
+    onCheck,
+    checkFeedback,
     onHint,
     onAdvance,
   };

@@ -1,4 +1,5 @@
 export type {
+  AdvanceResult,
   Chain,
   FreeplayProgress,
   GameState,
@@ -13,7 +14,7 @@ export type {
 } from './types';
 
 export { hashString, mulberry32, defaultRng } from './rng';
-export { scrambleLetters } from './scramble';
+export { scrambleLetters, shuffleString, insertLetterAvoidingSolution, lockNextPosition } from './scramble';
 export { rungCountForLevel, pickFreeplayChain, dailyRng, pickDailyChain } from './chainSelection';
 export {
   initGame,
@@ -23,6 +24,7 @@ export {
   useHint,
   isComplete,
   getDisplayLetters,
+  setCurrentOrder,
 } from './gameEngine';
 export { buildShareString } from './shareScore';
 export { initialFreeplayProgress, recordCompletion } from './freeplayProgress';

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { scrambleLetters } from '../src/scramble';
+import { insertLetterAvoidingSolution, scrambleLetters } from '../src/scramble';
 import { mulberry32 } from '../src/rng';
 
 function sortedChars(s: string): string {
@@ -38,5 +38,31 @@ describe('scrambleLetters', () => {
     // escaping it. rng always 0 -> shuffleOnce always swaps to "ba".
     const result = scrambleLetters('ab', () => 0, ['ba']);
     expect(result).toBe('ba');
+  });
+
+  it('never returns a literal answer even when the closeness policy rejects every arrangement', () => {
+    // "art" / "rat" / "tar" between them (plus reversals) cover every one of
+    // the 6 permutations of these letters, so isTooCloseToWord rejects all
+    // of them — this is exactly the case the tiered fallback exists for:
+    // degrade to "not literally an answer" rather than "whatever came last."
+    const words = ['art', 'rat', 'tar'];
+    for (let seed = 1; seed <= 200; seed++) {
+      const result = scrambleLetters('art', mulberry32(seed), words);
+      expect(words).not.toContain(result);
+    }
+  });
+});
+
+describe('insertLetterAvoidingSolution', () => {
+  it('never lands on a position that spells an answer, even when most positions would', () => {
+    // Inserting 't' into "ar" can only land at 3 positions — two of them
+    // ("tar", "art") are answers, leaving exactly one safe spot ("atr").
+    const words = ['art', 'tar', 'rat'];
+    for (let seed = 1; seed <= 100; seed++) {
+      const { result, index } = insertLetterAvoidingSolution('ar', 't', mulberry32(seed), words);
+      expect(words).not.toContain(result);
+      expect(result).toBe('atr');
+      expect(index).toBe(1);
+    }
   });
 });

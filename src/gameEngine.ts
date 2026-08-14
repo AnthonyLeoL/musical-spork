@@ -1,5 +1,5 @@
-import { scrambleLetters } from './scramble';
-import type { Chain, GameState, Rng, RungProgress, SubmitGuessResult } from './types';
+import { insertLetterAvoidingSolution, lockNextPosition, scrambleLetters } from './scramble';
+import type { AdvanceResult, Chain, GameState, Rng, RungProgress, SubmitGuessResult } from './types';
 
 function currentRung(state: GameState) {
   const rung = state.chain.rungs[state.currentRungIndex];
@@ -17,6 +17,10 @@ function currentProgress(state: GameState): RungProgress {
   return progress;
 }
 
+function sortedChars(s: string): string {
+  return s.split('').sort().join('');
+}
+
 /** Starts a fresh playthrough of `chain`: scrambles rung 0 and seeds its progress record. */
 export function initGame(chain: Chain, rng: Rng): GameState {
   const firstRung = chain.rungs[0];
@@ -27,7 +31,9 @@ export function initGame(chain: Chain, rng: Rng): GameState {
   return {
     chain,
     currentRungIndex: 0,
-    progressByRung: [{ foundWords: [], hintsUsed: 0, scramble }],
+    progressByRung: [
+      { foundWords: [], hintsUsed: 0, hintsUsedTotal: 0, scramble, currentOrder: scramble },
+    ],
     status: 'in-progress',
   };
 }
@@ -36,6 +42,19 @@ export function initGame(chain: Chain, rng: Rng): GameState {
  * Checks `guess` against the current rung's valid words (case-insensitive).
  * A correct, not-yet-found word is recorded (this is CLAUDE.md's "continue to
  * anagram to find other words" option at a rung with 2+ valid words).
+ * Doesn't touch `currentOrder` — finding a word leaves the tiles exactly as
+ * the player arranged them, it doesn't rescramble anything.
+ *
+ * It does release any hint lock (`hintsUsed` resets to 0, though
+ * `hintsUsedTotal` — what the share string reports — doesn't): a lock only
+ * ever anchors toward one specific word (`rung.words[0]`), so once the
+ * player has found *a* word, keeping it locked would only get in the way of
+ * searching for any other valid words this rung might have.
+ *
+ * Finding a word at the chain's *last* rung completes the game immediately:
+ * there's no further letter that can be added, so there's nothing to wait
+ * on the player to manually advance into (see `advance`'s doc for the
+ * defensive fallback on this same transition).
  */
 export function submitGuess(state: GameState, guess: string): SubmitGuessResult {
   if (state.status === 'complete') {
@@ -58,11 +77,15 @@ export function submitGuess(state: GameState, guess: string): SubmitGuessResult 
   const updatedProgress: RungProgress = {
     ...progress,
     foundWords: [...progress.foundWords, canonical],
+    hintsUsed: 0,
   };
   const progressByRung = [...state.progressByRung];
   progressByRung[state.currentRungIndex] = updatedProgress;
 
-  return { state: { ...state, progressByRung }, outcome: 'correct' };
+  const isLastRung = state.currentRungIndex === state.chain.rungs.length - 1;
+  const status = isLastRung ? 'complete' : state.status;
+
+  return { state: { ...state, progressByRung, status }, outcome: 'correct' };
 }
 
 /** True once the current rung has at least one found word and the game isn't already complete. */
@@ -75,39 +98,67 @@ export function isComplete(state: GameState): boolean {
 }
 
 /**
- * Moves to the next rung, scrambling its full letter set. If the current
- * rung is already the chain's last rung (no letter can extend it further —
- * see `build_progressive_anagrams.js`'s termination logic), the game ends
- * instead: `status` becomes `'complete'` and `currentRungIndex` stays put.
+ * Moves to the next rung by inserting its added letter into the *current*
+ * rung's live arrangement (`currentOrder`) at a random position that isn't
+ * the new rung's answer — the player's own tile order carries forward
+ * as-is, only the new letter is placed randomly (see
+ * `insertLetterAvoidingSolution`). `insertedIndex` on the result tells a
+ * caller exactly where that new tile landed, for animating it in.
+ *
+ * If the current rung is already the chain's last rung (no letter can
+ * extend it further — see `build_progressive_anagrams.js`'s termination
+ * logic), the game ends instead: `status` becomes `'complete'`,
+ * `currentRungIndex` stays put, and `insertedIndex` is `null`. In practice
+ * `submitGuess` already completes the game the moment a word is found at
+ * the last rung, so this is a defensive fallback rather than the normal path.
  */
-export function advance(state: GameState, rng: Rng): GameState {
+export function advance(state: GameState, rng: Rng): AdvanceResult {
   if (!canAdvance(state)) {
     throw new Error('Cannot advance: current rung has no found word yet');
   }
 
   const isLastRung = state.currentRungIndex === state.chain.rungs.length - 1;
   if (isLastRung) {
-    return { ...state, status: 'complete' };
+    return { state: { ...state, status: 'complete' }, insertedIndex: null };
   }
 
   const nextIndex = state.currentRungIndex + 1;
   const nextRung = state.chain.rungs[nextIndex]!;
-  const scramble = scrambleLetters(nextRung.key, rng, nextRung.words);
-  const nextProgress: RungProgress = { foundWords: [], hintsUsed: 0, scramble };
+  const currentOrderNow = currentProgress(state).currentOrder;
+  const { result: inserted, index } = insertLetterAvoidingSolution(
+    currentOrderNow,
+    nextRung.addedLetter!,
+    rng,
+    nextRung.words,
+  );
+  const nextProgress: RungProgress = {
+    foundWords: [],
+    hintsUsed: 0,
+    hintsUsedTotal: 0,
+    scramble: inserted,
+    currentOrder: inserted,
+  };
 
   return {
-    ...state,
-    currentRungIndex: nextIndex,
-    progressByRung: [...state.progressByRung, nextProgress],
+    state: {
+      ...state,
+      currentRungIndex: nextIndex,
+      progressByRung: [...state.progressByRung, nextProgress],
+    },
+    insertedIndex: index,
   };
 }
 
 /**
  * Locks one more letter position (left-to-right over the rung's anchor word,
- * `rung.words[0]`) at the current rung. A no-op once every position is
- * already locked, or once the game is complete.
+ * `rung.words[0]`) at the current rung, reshuffling the still-unlocked
+ * letters so revealing one doesn't leave the rest already spelling the
+ * answer (see `lockNextPosition`). A no-op once every position is already
+ * locked, or once the game is complete. Also bumps `hintsUsedTotal` — unlike
+ * `hintsUsed`, that count survives a later correct-guess lock release, so a
+ * hint still shows up in the share string even after its lock is gone.
  */
-export function useHint(state: GameState): GameState {
+export function useHint(state: GameState, rng: Rng): GameState {
   if (state.status === 'complete') {
     return state;
   }
@@ -121,42 +172,47 @@ export function useHint(state: GameState): GameState {
     return state; // already fully locked
   }
 
+  const currentOrder = lockNextPosition(progress.currentOrder, anchorWord, hintsUsed, rng, rung.words);
   const progressByRung = [...state.progressByRung];
-  progressByRung[state.currentRungIndex] = { ...progress, hintsUsed };
+  progressByRung[state.currentRungIndex] = {
+    ...progress,
+    hintsUsed,
+    hintsUsedTotal: progress.hintsUsedTotal + 1,
+    currentOrder,
+  };
 
   return { ...state, progressByRung };
 }
 
-/**
- * Derived, read-only view of what the player should see for the current
- * rung: locked positions (per `hintsUsed`, left-to-right over the anchor
- * word `rung.words[0]`) show the correct letter, unlocked positions show the
- * rung's stored scramble with the locked letters removed (relative order
- * otherwise preserved, so the display doesn't jitter as hints are used).
- */
+/** Read-only view of the current rung's live arrangement, one character per tile. */
 export function getDisplayLetters(state: GameState): string[] {
+  return currentProgress(state).currentOrder.split('');
+}
+
+/**
+ * Overwrites the current rung's live arrangement — call this whenever the
+ * player finishes dragging tiles into a new order, independent of whether
+ * they've checked it yet (checking is `submitGuess`; this just persists
+ * where the tiles visually are). Rejects an order that would move a locked
+ * (hinted) letter or that isn't a permutation of this rung's letters.
+ */
+export function setCurrentOrder(state: GameState, order: string): GameState {
   const rung = currentRung(state);
   const progress = currentProgress(state);
   const anchorWord = rung.words[0]!;
-  const lockedCount = Math.min(progress.hintsUsed, anchorWord.length);
+  const lockedCount = progress.hintsUsed;
 
-  const remaining = progress.scramble.split('');
-  const result = new Array<string>(anchorWord.length);
-
-  for (let i = 0; i < lockedCount; i++) {
-    const letter = anchorWord[i]!;
-    result[i] = letter;
-    const idx = remaining.indexOf(letter);
-    if (idx !== -1) {
-      remaining.splice(idx, 1);
-    }
+  if (order.length !== rung.key.length) {
+    throw new Error(`setCurrentOrder: expected ${rung.key.length} letters, got ${order.length}`);
+  }
+  if (order.slice(0, lockedCount) !== anchorWord.slice(0, lockedCount)) {
+    throw new Error('setCurrentOrder: cannot move a locked letter');
+  }
+  if (sortedChars(order) !== sortedChars(rung.key)) {
+    throw new Error("setCurrentOrder: order is not a permutation of this rung's letters");
   }
 
-  let ri = 0;
-  for (let i = lockedCount; i < anchorWord.length; i++) {
-    result[i] = remaining[ri]!;
-    ri++;
-  }
-
-  return result;
+  const progressByRung = [...state.progressByRung];
+  progressByRung[state.currentRungIndex] = { ...progress, currentOrder: order };
+  return { ...state, progressByRung };
 }

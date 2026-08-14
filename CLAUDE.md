@@ -140,13 +140,56 @@ script changes.
 ## Game engine (TypeScript)
 
 `src/` holds a pure, stateless TypeScript game engine consuming the pipeline's JSON output —
-`initGame`/`submitGuess`/`advance`/`useHint`/`getDisplayLetters`/`isComplete` drive one
-playthrough; `chainSelection.ts` picks the daily (date-seeded, same chain+scrambles for every
-player) and freeplay (level → rung count, starts at 3 and grows) chains; `shareScore.ts` builds
-the `rung -> rung -> ...` share string with `(hint)` markers. The engine never touches storage —
-callers persist whatever `GameState`/`FreeplayProgress` they're handed back. The browser-safe barrel is `src/index.ts` (no `fs`); `src/loaders.ts` (fs-based) is only
-re-exported from `src/node.ts`, which Node-side code (the CLI demo) imports instead — this split
-is what lets the browser UI below import the engine directly with no bundling issues.
+`initGame`/`submitGuess`/`advance`/`useHint`/`getDisplayLetters`/`isComplete`/`setCurrentOrder`
+drive one playthrough; `chainSelection.ts` picks the daily (date-seeded, same chain+scrambles for
+every player) and freeplay (level → rung count, starts at 3 and grows) chains; `shareScore.ts`
+builds the `rung -> rung -> ...` share string with `(hint)` markers. The engine never touches
+storage — callers persist whatever `GameState`/`FreeplayProgress` they're handed back. The
+browser-safe barrel is `src/index.ts` (no `fs`); `src/loaders.ts` (fs-based) is only re-exported
+from `src/node.ts`, which Node-side code (the CLI demo) imports instead — this split is what lets
+the browser UI below import the engine directly with no bundling issues.
+
+Each `RungProgress` tracks two separate letter strings, and mixing them up is the easiest way to
+reintroduce a bug this design specifically avoids:
+- **`scramble`** — fixed at rung-entry, never touched again. Exists only for `buildShareString`.
+- **`currentOrder`** — the *live* arrangement, and the actual source of truth for what
+  `getDisplayLetters` returns. It deliberately does **not** reset to `scramble` after a correct
+  guess or a hint — the player's own arrangement carries forward:
+  - `submitGuess` never touches `currentOrder` — finding a word leaves the tiles exactly as arranged.
+  - `advance` doesn't rescramble the next rung; it inserts the new rung's added letter into the
+    *current* `currentOrder` at a random position that isn't the answer (`insertLetterAvoidingSolution`),
+    and returns `{ state, insertedIndex }` so a caller can animate just that one new tile.
+  - `useHint` now takes an `rng` — locking one more letter also reshuffles the still-unlocked
+    remainder (`lockNextPosition`), so revealing one correct letter can't leave the rest already
+    spelling the answer by coincidence.
+  - `setCurrentOrder` is the only way anything else (a drag reorder) can overwrite `currentOrder`;
+    it rejects moving a locked letter or a non-permutation.
+
+`hintsUsed` (current lock count) and `hintsUsedTotal` (cumulative, for scoring) are deliberately
+two different fields, not one — `submitGuess` resets `hintsUsed` to 0 on a correct guess (never
+`hintsUsedTotal`). A hint lock always anchors toward `rung.words[0]` specifically; at a rung with
+2+ valid words, keeping it locked after finding *a* word would leave the player unable to ever
+spell any of the *other* words (they might not share that letter in that position at all) —
+releasing it is what makes "continue to find other words" (CLAUDE.md's option A) actually usable.
+`buildShareString` reads `hintsUsedTotal`, so a hint still shows in the score even once its lock
+is gone.
+
+`scrambleLetters` (the *starting*-rung scramble) has a tiered fallback that's easy to
+under-appreciate and re-break: its "not close to the word or its reverse" preference is
+deliberately soft, because for a rung whose full anagram group covers most/all of its own
+permutations (e.g. "art"/"rat"/"tar" between them cover every reasonably-distinct 3-letter
+arrangement), **every** shuffle can end up "too close" to something, and naively falling back to
+"whatever the last attempt was" risks literally handing back one of the answers — i.e. the
+starting letters would already spell a valid word. So when the strict preference can't be
+satisfied within budget, it falls back to the weaker-but-load-bearing guarantee instead: not
+*literally* one of the answers. Verified with a 200-seed stress test in `scramble.test.ts` against
+exactly the "art"/"rat"/"tar" case. `insertLetterAvoidingSolution` (every letter-add) and
+`lockNextPosition` (every hint) don't have this problem — they only ever checked exact-match in
+the first place, so there was nothing to make soft.
+- A correct guess at the chain's **last** rung completes the game immediately from inside
+  `submitGuess` — there's no rung left to advance into, so there's nothing to wait on a manual
+  "next" click for. `advance`'s own last-rung-completes branch still exists as a defensive
+  fallback, but shouldn't normally be reached.
 
 This is the one part of the repo with real tooling: `package.json` (TypeScript + Vitest as
 devDependencies, no runtime deps), `tsconfig.json`, `test/` (Vitest, mirrors `src/`), and
@@ -164,7 +207,8 @@ npm run demo    # scripted daily-puzzle playthrough, printed to console
 
 `web/` is a Vite + React + TypeScript app (npm workspace, linked to the root package as
 `anagram-game-engine`) that plays the engine — Daily and Freeplay tabs, drag-to-reorder letter
-tiles (Pointer Events, no DnD library), a Hint button, and a Share-score button that copies
+tiles (Pointer Events, no DnD library), an explicit Check-word action (button or Enter — nothing
+is auto-checked while dragging), a Hint button, and a Share-score button that copies
 `buildShareString`'s output to the clipboard. `web/src/game/use{Daily,Freeplay}Puzzle.ts` are the
 two hooks that wire the stateless engine to React state + `localStorage` (`web/src/data/storage.ts`)
 — this is the concrete "caller persists whatever state it gets back" side of the engine's
@@ -174,7 +218,32 @@ each rung-count file in memory per session.
 
 Daily puzzles are seeded per-rung (`dailyRng(dateStr, rungIndex)`, not one continuous RNG stream)
 specifically so a page reload mid-game still lands on the same scramble everyone else sees at that
-rung. Freeplay has no such determinism requirement and uses `Math.random`.
+rung. Freeplay has no such determinism requirement and uses `Math.random`. (One honest gap in
+that fairness story: since `advance` now inserts a letter into the *player's own* `currentOrder`
+rather than generating an independent scramble, two players who drag rung *N*'s tiles into
+different arrangements — or find a different valid word where a rung has several — will see
+different letter arrangements from rung *N+1* onward, even with the same date seed. The very
+first rung's scramble is still identical for everyone; nothing beyond that was ever load-bearing
+for gameplay, only for the share-string "vibe", so this wasn't worth re-engineering around.)
+
+`web/src/game/tiles.ts`'s `Tile.id` is what makes the animations work, not any CSS trick — tile
+identity is deliberately preserved (same id) across a correct guess and across most of an advance,
+and deliberately *not* preserved across a hint or a fresh rung load:
+- **Found a word**: `tiles` isn't rebuilt at all (point 5 above, same idea at the UI layer) — the
+  same tile objects just stay on screen.
+- **Added a letter**: `insertTile` splices exactly *one new* tile object into the existing tile
+  array at the engine's returned `insertedIndex`; every other tile keeps its id. React only mounts
+  the new one, so only it plays the CSS "fly in" keyframe (`.letter-tile--entering`) — the rest
+  smoothly slide over (via the `left` transition every tile already has) to make room.
+- **Hint / fresh rung**: `buildTiles` regenerates the whole row with fresh ids — a plain reset,
+  no entrance animation, since nothing was asked for there beyond hint's correctness guarantee.
+
+`LetterRack.tsx` positions every tile with an absolutely-positioned, animated `left` rather than
+relying on flex reordering — while dragging, every *other* tile's target slot is computed as if
+the dragged tile had been removed from the sequence, then a gap is reopened wherever the pointer
+currently is (`visualSlot` in that file), which is what produces the "the rest group together, then
+part again around the hover point" effect; the dragged tile itself just follows the pointer with a
+scale/shadow bump. The actual array order is only finalized on drop.
 
 ```
 npm install        # from repo root — installs both the engine and web/ (npm workspaces)
