@@ -3,6 +3,8 @@ import react from '@vitejs/plugin-react';
 import path from 'path';
 
 export default defineConfig({
+  // Set base to the repository name so asset links work on GitHub Pages
+  base: '/musical-spork/',
   plugins: [react()],
   resolve: {
     alias: {
