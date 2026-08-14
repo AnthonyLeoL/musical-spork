@@ -234,6 +234,29 @@ describe('useHint / getDisplayLetters', () => {
     expect(state.progressByRung[0]!.hintsUsedTotal).toBe(2);
   });
 
+  it('anchors to the first not-yet-found word, not always words[0]', () => {
+    // CHAIN's rung 0 has 3 words: ['art', 'rat', 'tar']. Once 'art' (words[0])
+    // is found, a hint should no longer point at it — pointing at an
+    // already-found word would be useless for the words still left to find.
+    let state = initGame(CHAIN, mulberry32(1));
+    state = submitGuess(state, 'art').state;
+    expect(state.progressByRung[0]!.foundWords).toEqual(['art']);
+
+    state = useHint(state, mulberry32(10));
+    expect(state.progressByRung[0]!.hintsUsed).toBe(1);
+    expect(getDisplayLetters(state)[0]).toBe('rat'[0]); // anchored to 'rat', not 'art'
+  });
+
+  it('re-anchors again once the second word is also found', () => {
+    let state = initGame(CHAIN, mulberry32(1));
+    state = submitGuess(state, 'art').state;
+    state = submitGuess(state, 'rat').state;
+    expect(state.progressByRung[0]!.foundWords).toEqual(['art', 'rat']);
+
+    state = useHint(state, mulberry32(10));
+    expect(getDisplayLetters(state)[0]).toBe('tar'[0]); // only 'tar' left unfound
+  });
+
   it('does not leave the display fully solved before every letter is hinted', () => {
     // "sprint" has 6 distinct letters — plenty of room to avoid accidentally
     // being fully correct with 1-4 hints used (5th/6th hint necessarily
@@ -269,5 +292,14 @@ describe('setCurrentOrder', () => {
     let state = initGame(CHAIN, mulberry32(1));
     state = useHint(state, mulberry32(10)); // locks position 0 to 'a'
     expect(() => setCurrentOrder(state, 'tar')).toThrow(); // 't' != 'a' at position 0
+  });
+
+  it('checks the locked letter against the current hint anchor, not always words[0]', () => {
+    let state = initGame(CHAIN, mulberry32(1));
+    state = submitGuess(state, 'art').state; // 'art' found; anchor moves to 'rat'
+    state = useHint(state, mulberry32(10)); // locks position 0 to 'r' (from 'rat')
+
+    expect(() => setCurrentOrder(state, 'art')).toThrow(); // 'a' != 'r' at position 0
+    expect(() => setCurrentOrder(state, 'rta')).not.toThrow(); // 'r' at position 0 is fine
   });
 });

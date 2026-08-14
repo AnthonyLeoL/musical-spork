@@ -1,5 +1,10 @@
 import { useRef, useState } from 'react';
+import type { CSSProperties } from 'react';
 import type { Tile } from '../game/tiles';
+
+/** Custom properties aren't in React's CSSProperties type, so tile styles that set
+ * `--tile-progress` (read by the color-mix/glow rules in styles.css) need this escape hatch. */
+type TileStyle = CSSProperties & { '--tile-progress'?: number };
 
 const TILE_SIZE = 56;
 const GAP = 10;
@@ -9,9 +14,15 @@ interface LetterRackProps {
   tiles: Tile[];
   onReorder: (tiles: Tile[]) => void;
   disabled?: boolean;
-  /** True once every valid word at this rung has been found — styles every tile gold so it's
-   * obvious there's nothing left to check here, just a letter to add. */
-  celebrate?: boolean;
+  /** foundWords / wordsAtRung for the current rung, 0–1. Tiles tint from their
+   * normal color toward gold in direct proportion — 1 of 5 words found is 20% of
+   * the way there, 1 of 1 is the full, fully-celebratory gold. Drives both the
+   * color-mix and the glow/scale intensity in CSS, so "more found" always just
+   * *reads* as more done, not a single flip at the end. */
+  progress?: number;
+  /** True for the instant after a correct guess — triggers a one-shot flash/pop
+   * across the rack so finding a word actually feels like something happened. */
+  justFound?: boolean;
 }
 
 /**
@@ -29,7 +40,13 @@ interface LetterRackProps {
  * the parent is notified via onReorder (checking a finished arrangement is
  * a separate, explicit action — see onCheck elsewhere).
  */
-export function LetterRack({ tiles, onReorder, disabled = false, celebrate = false }: LetterRackProps) {
+export function LetterRack({
+  tiles,
+  onReorder,
+  disabled = false,
+  progress = 0,
+  justFound = false,
+}: LetterRackProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [dragId, setDragId] = useState<string | null>(null);
   const [dragX, setDragX] = useState(0);
@@ -90,7 +107,7 @@ export function LetterRack({ tiles, onReorder, disabled = false, celebrate = fal
   return (
     <div
       ref={containerRef}
-      className="letter-rack"
+      className={['letter-rack', justFound ? 'letter-rack--flash' : ''].filter(Boolean).join(' ')}
       style={{ width, height: TILE_SIZE, touchAction: 'none' }}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
@@ -105,14 +122,22 @@ export function LetterRack({ tiles, onReorder, disabled = false, celebrate = fal
             onPointerDown={(e) => handlePointerDown(e, tile, i)}
             className={[
               'letter-tile',
+              progress > 0 ? 'letter-tile--progress' : '',
+              progress >= 1 ? 'letter-tile--complete' : '',
               tile.locked ? 'letter-tile--locked' : '',
-              celebrate ? 'letter-tile--gold' : '',
               isDragging ? 'letter-tile--dragging' : '',
               tile.entering ? 'letter-tile--entering' : '',
             ]
               .filter(Boolean)
               .join(' ')}
-            style={{ width: TILE_SIZE, height: TILE_SIZE, left }}
+            style={
+              {
+                width: TILE_SIZE,
+                height: TILE_SIZE,
+                left,
+                '--tile-progress': progress,
+              } as TileStyle
+            }
           >
             {tile.letter.toUpperCase()}
           </div>

@@ -48,8 +48,9 @@ export type Rng = () => number;
 export interface RungProgress {
   /** Subset of the rung's `words`, in the order the player found them. */
   foundWords: string[];
-  /** How many letters are *currently* locked (always a prefix over `rung.words[0]`). Reset to 0
-   * by a correct guess — a lock only ever anchors toward one specific word, so it's released
+  /** How many letters are *currently* locked (always a prefix over whichever of `rung.words` a
+   * hint is currently anchored to — the first not-yet-found word, see `hintAnchorWord`). Reset
+   * to 0 by a correct guess — a lock only ever anchors toward one specific word, so it's released
    * once that word is found, letting the player freely search for any other valid words at this
    * rung instead of staying stuck mid-way through spelling the word the hint was aimed at. */
   hintsUsed: number;

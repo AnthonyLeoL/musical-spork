@@ -1,5 +1,5 @@
 import { insertLetterAvoidingSolution, lockNextPosition, scrambleLetters } from './scramble';
-import type { AdvanceResult, Chain, GameState, Rng, RungProgress, SubmitGuessResult } from './types';
+import type { AdvanceResult, Chain, GameState, Rng, Rung, RungProgress, SubmitGuessResult } from './types';
 
 function currentRung(state: GameState) {
   const rung = state.chain.rungs[state.currentRungIndex];
@@ -19,6 +19,20 @@ function currentProgress(state: GameState): RungProgress {
 
 function sortedChars(s: string): string {
   return s.split('').sort().join('');
+}
+
+/**
+ * The word a hint lock (and the locked-prefix check in `setCurrentOrder`)
+ * anchors toward: the first of the rung's words *not* already in
+ * `progress.foundWords`. Plain `rung.words[0]` would keep pointing at an
+ * already-found word once it's been guessed, making a hint at a multi-word
+ * rung useless (or actively misleading) for finding the remaining ones.
+ * Falls back to `rung.words[0]` if every word has already been found (hints
+ * shouldn't normally be requested at that point, but this keeps the helper
+ * total).
+ */
+function hintAnchorWord(rung: Rung, progress: RungProgress): string {
+  return rung.words.find((word) => !progress.foundWords.includes(word)) ?? rung.words[0]!;
 }
 
 /** Starts a fresh playthrough of `chain`: scrambles rung 0 and seeds its progress record. */
@@ -150,8 +164,9 @@ export function advance(state: GameState, rng: Rng): AdvanceResult {
 }
 
 /**
- * Locks one more letter position (left-to-right over the rung's anchor word,
- * `rung.words[0]`) at the current rung, reshuffling the still-unlocked
+ * Locks one more letter position (left-to-right over the rung's anchor
+ * word — the first of `rung.words` not already in `foundWords`, see
+ * `hintAnchorWord`) at the current rung, reshuffling the still-unlocked
  * letters so revealing one doesn't leave the rest already spelling the
  * answer (see `lockNextPosition`). A no-op once every position is already
  * locked, or once the game is complete. Also bumps `hintsUsedTotal` — unlike
@@ -165,7 +180,7 @@ export function useHint(state: GameState, rng: Rng): GameState {
 
   const rung = currentRung(state);
   const progress = currentProgress(state);
-  const anchorWord = rung.words[0]!;
+  const anchorWord = hintAnchorWord(rung, progress);
   const hintsUsed = Math.min(progress.hintsUsed + 1, anchorWord.length);
 
   if (hintsUsed === progress.hintsUsed) {
@@ -199,7 +214,7 @@ export function getDisplayLetters(state: GameState): string[] {
 export function setCurrentOrder(state: GameState, order: string): GameState {
   const rung = currentRung(state);
   const progress = currentProgress(state);
-  const anchorWord = rung.words[0]!;
+  const anchorWord = hintAnchorWord(rung, progress);
   const lockedCount = progress.hintsUsed;
 
   if (order.length !== rung.key.length) {

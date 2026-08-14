@@ -167,11 +167,16 @@ reintroduce a bug this design specifically avoids:
 
 `hintsUsed` (current lock count) and `hintsUsedTotal` (cumulative, for scoring) are deliberately
 two different fields, not one — `submitGuess` resets `hintsUsed` to 0 on a correct guess (never
-`hintsUsedTotal`). A hint lock always anchors toward `rung.words[0]` specifically; at a rung with
-2+ valid words, keeping it locked after finding *a* word would leave the player unable to ever
-spell any of the *other* words (they might not share that letter in that position at all) —
-releasing it is what makes "continue to find other words" (CLAUDE.md's option A) actually usable.
-`buildShareString` reads `hintsUsedTotal`, so a hint still shows in the score even once its lock
+`hintsUsedTotal`). A hint lock anchors toward `hintAnchorWord(rung, progress)` — the first of
+`rung.words` *not already in `foundWords`* (falling back to `rung.words[0]` once every word has
+been found) — not blindly `rung.words[0]`; at a rung with 2+ valid words, anchoring toward an
+already-found word would make a hint useless (or actively misleading) once that word is done, and
+keeping a lock toward it after finding it would leave the player unable to ever spell any of the
+*other* words (they might not share that letter in that position at all) — releasing it (and
+re-anchoring to whichever word is still unfound) is what makes "continue to find other words"
+(CLAUDE.md's option A) actually usable. `setCurrentOrder`'s locked-letter check uses the same
+`hintAnchorWord` so it validates drags against whichever word the active lock is actually aimed
+at. `buildShareString` reads `hintsUsedTotal`, so a hint still shows in the score even once its lock
 is gone.
 
 `scrambleLetters` (the *starting*-rung scramble) has a tiered fallback that's easy to
