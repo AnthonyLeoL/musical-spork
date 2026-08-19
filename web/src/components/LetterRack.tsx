@@ -10,9 +10,11 @@ const TILE_SIZE = 56;
 const GAP = 10;
 const GAP_RATIO = GAP / TILE_SIZE;
 /** Below this, letters stop shrinking and `.rack-scroller` (styles.css) takes over with
- * horizontal scroll instead — a long chain's final rungs (up to 11 letters) simply can't fit a
- * legible tile size on a narrow phone screen, so shrinking alone can't be the whole story. */
-const MIN_TILE_SIZE = 34;
+ * horizontal scroll instead, as a last resort. Low enough (with styles.css's mobile full-bleed
+ * `.puzzle-board`) that even an 11-letter rung — the longest a chain ever reaches — still fits
+ * without scrolling on a 375px-wide phone; only narrower/older devices should ever hit the
+ * scroll fallback in practice. */
+const MIN_TILE_SIZE = 26;
 
 interface LetterRackProps {
   tiles: Tile[];

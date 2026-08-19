@@ -409,16 +409,23 @@ body {
   max-width: 100%;
 }
 
-/* Narrow phones — free up horizontal room for the letter rack (its own shrink-then-scroll
+/* Narrow phones — free up every spare pixel for the letter rack (its own shrink-then-scroll
  * fallback lives in LetterRack.tsx / .rack-scroller above) and keep controls from feeling
- * cramped against the edges. */
+ * cramped against the edges. The card itself goes full-bleed: negative-margined out through
+ * `.app`'s own padding so it spans the whole screen width edge to edge instead of losing an
+ * extra ~2rem to its own card margin — that's the difference between an 11-letter rung fitting
+ * at a legible size on a 375px phone and needing MIN_TILE_SIZE's scroll fallback. */
 @media (max-width: 480px) {
   .app {
     padding: 1rem 0.5rem 2rem;
   }
 
   .puzzle-board {
-    padding: 1.25rem 0.75rem;
+    margin: 0 -0.5rem;
+    padding: 1rem 0.5rem;
+    border-radius: 0;
+    border-left: none;
+    border-right: none;
   }
 
   .controls-row__end {
