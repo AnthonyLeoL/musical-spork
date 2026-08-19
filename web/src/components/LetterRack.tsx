@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import type { Tile } from '../game/tiles';
 
@@ -8,7 +8,11 @@ type TileStyle = CSSProperties & { '--tile-progress'?: number };
 
 const TILE_SIZE = 56;
 const GAP = 10;
-const SLOT_WIDTH = TILE_SIZE + GAP;
+const GAP_RATIO = GAP / TILE_SIZE;
+/** Below this, letters stop shrinking and `.rack-scroller` (styles.css) takes over with
+ * horizontal scroll instead — a long chain's final rungs (up to 11 letters) simply can't fit a
+ * legible tile size on a narrow phone screen, so shrinking alone can't be the whole story. */
+const MIN_TILE_SIZE = 34;
 
 interface LetterRackProps {
   tiles: Tile[];
@@ -52,9 +56,38 @@ export function LetterRack({
   const [dragX, setDragX] = useState(0);
   const [grabOffset, setGrabOffset] = useState(0);
   const [hoverIndex, setHoverIndex] = useState(0);
+  // Width of `.rack-scroller` (the container's parent) — the rack itself is sized to its
+  // content (tiles.length * TILE_SIZE) so it can never report its own overflow; we need the
+  // fixed-width ancestor to know how much room tiles actually have to shrink into.
+  const [availableWidth, setAvailableWidth] = useState<number | null>(null);
+
+  // Layout effect (not a regular effect) so the first real measurement lands before paint —
+  // otherwise a phone would flash full-size, overflowing tiles for one frame before shrinking.
+  useLayoutEffect(() => {
+    const scroller = containerRef.current?.parentElement;
+    if (!scroller) return;
+    const update = () => setAvailableWidth(scroller.clientWidth);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(scroller);
+    return () => observer.disconnect();
+  }, []);
 
   const lockedCount = tiles.filter((t) => t.locked).length;
   const draggedOriginalIndex = dragId === null ? -1 : tiles.findIndex((t) => t.id === dragId);
+
+  // Shrink tiles (and their gap, proportionally) so all of them fit the available width on
+  // narrow screens, down to MIN_TILE_SIZE — past that point .rack-scroller's horizontal scroll
+  // (styles.css) takes over rather than squashing letters into illegibility.
+  const tileSize =
+    availableWidth && tiles.length > 0
+      ? Math.min(
+          TILE_SIZE,
+          Math.max(MIN_TILE_SIZE, availableWidth / (tiles.length + (tiles.length - 1) * GAP_RATIO)),
+        )
+      : TILE_SIZE;
+  const gap = tileSize * GAP_RATIO;
+  const slotWidth = tileSize + gap;
 
   function handlePointerDown(e: React.PointerEvent, tile: Tile, index: number): void {
     if (disabled || tile.locked) return;
@@ -62,7 +95,7 @@ export function LetterRack({
     if (!container) return;
     container.setPointerCapture(e.pointerId);
     const containerRect = container.getBoundingClientRect();
-    const tileLeft = index * SLOT_WIDTH;
+    const tileLeft = index * slotWidth;
     setDragId(tile.id);
     setGrabOffset(e.clientX - containerRect.left - tileLeft);
     setDragX(tileLeft);
@@ -75,7 +108,7 @@ export function LetterRack({
     const x = e.clientX - containerRect.left - grabOffset;
     setDragX(x);
 
-    const rawIndex = Math.round(x / SLOT_WIDTH);
+    const rawIndex = Math.round(x / slotWidth);
     const clamped = Math.min(Math.max(rawIndex, lockedCount), tiles.length - 1);
     setHoverIndex(clamped);
   }
@@ -102,20 +135,23 @@ export function LetterRack({
     return withoutDragged >= hoverIndex ? withoutDragged + 1 : withoutDragged;
   }
 
-  const width = tiles.length * TILE_SIZE + Math.max(0, tiles.length - 1) * GAP;
+  const width = tiles.length * tileSize + Math.max(0, tiles.length - 1) * gap;
+  // Font scales with the tile itself rather than staying pinned to styles.css's fixed 1.4rem —
+  // otherwise a shrunk tile on a small phone would clip its own letter.
+  const fontSize = tileSize * 0.4;
 
   return (
     <div
       ref={containerRef}
       className={['letter-rack', justFound ? 'letter-rack--flash' : ''].filter(Boolean).join(' ')}
-      style={{ width, height: TILE_SIZE, touchAction: 'none' }}
+      style={{ width, height: tileSize, touchAction: 'none' }}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerUp}
     >
       {tiles.map((tile, i) => {
         const isDragging = tile.id === dragId;
-        const left = isDragging ? dragX : visualSlot(i) * SLOT_WIDTH;
+        const left = isDragging ? dragX : visualSlot(i) * slotWidth;
         return (
           <div
             key={tile.id}
@@ -132,8 +168,9 @@ export function LetterRack({
               .join(' ')}
             style={
               {
-                width: TILE_SIZE,
-                height: TILE_SIZE,
+                width: tileSize,
+                height: tileSize,
+                fontSize,
                 left,
                 '--tile-progress': progress,
               } as TileStyle
