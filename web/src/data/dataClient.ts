@@ -8,7 +8,10 @@ import type { Chain, RungCountFile } from 'anagram-game-engine';
 const cache = new Map<number, Promise<RungCountFile>>();
 
 async function fetchRungCountFile(rungCount: number): Promise<RungCountFile> {
-  const response = await fetch(`/data/progressive_anagrams_${rungCount}.json`);
+  // BASE_URL (Vite's `base` config) rather than a hardcoded leading slash —
+  // on GitHub Pages this app is served from /musical-spork/, not the domain
+  // root, so an absolute `/data/...` path 404s there.
+  const response = await fetch(`${import.meta.env.BASE_URL}data/progressive_anagrams_${rungCount}.json`);
   if (!response.ok) {
     throw new Error(`Failed to load puzzle data for rung count ${rungCount}: ${response.status}`);
   }
