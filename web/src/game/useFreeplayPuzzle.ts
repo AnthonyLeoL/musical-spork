@@ -7,6 +7,7 @@ import {
   initialFreeplayProgress,
   isComplete as engineIsComplete,
   initGame,
+  MIN_RUNG_COUNT,
   pickFreeplayChain,
   recordCompletion,
   rungCountForLevel,
@@ -31,8 +32,9 @@ import type { PuzzleController } from './types';
 
 const FEEDBACK_DURATION_MS = 1200;
 
-async function pickNewChain(progress: FreeplayProgress): Promise<GameState> {
-  const rungCount = rungCountForLevel(progress.level);
+/** Loads a fresh freeplay chain at a specific rung count — the level-derived one (normal
+ * progression) or an explicitly-chosen, already-unlocked one (see onSelectRungCount). */
+async function loadFreeplayChain(rungCount: number): Promise<GameState> {
   const file = await loadRungCountFile(rungCount);
   const chain = pickFreeplayChain(file, defaultRng());
   return initGame(chain, defaultRng());
@@ -96,7 +98,7 @@ export function useFreeplayPuzzle(): PuzzleController {
           }
           return;
         }
-        const fresh = await pickNewChain(savedProgress);
+        const fresh = await loadFreeplayChain(rungCountForLevel(savedProgress.level));
         if (!cancelled) {
           persistState(fresh);
           setTilesAndRef(buildTiles(fresh));
@@ -140,7 +142,16 @@ export function useFreeplayPuzzle(): PuzzleController {
       persistState(result.state);
       setTilesAndRef(unlockTiles(tilesRef.current));
       if (engineIsComplete(result.state)) {
-        persistProgress(recordCompletion(progressRef.current, result.state.chain));
+        // Only advance level/puzzlesCompleted when this was the player's normal, level-derived
+        // puzzle. A deliberately-replayed shorter length (see onSelectRungCount) doesn't count —
+        // it's a practice replay, not progress — which this comparison detects for free, with
+        // no separate "is this a replay" flag to keep in sync: replaying at exactly the player's
+        // current level-derived rung count (i.e. no shorter length was actually available to
+        // pick) is indistinguishable from — and correctly counts the same as — a normal puzzle.
+        const levelRungCount = rungCountForLevel(progressRef.current.level);
+        if (result.state.chain.rungCount === levelRungCount) {
+          persistProgress(recordCompletion(progressRef.current, result.state.chain));
+        }
       }
     }
   }
@@ -160,18 +171,18 @@ export function useFreeplayPuzzle(): PuzzleController {
     persistState(next);
     if (insertedIndex !== null) {
       const rung = next.chain.rungs[next.currentRungIndex]!;
-      setTilesAndRef(insertTile(tilesRef.current, rung.addedLetter!, insertedIndex));
+      setTilesAndRef(insertTile(tilesRef.current, rung.addedLetter!, insertedIndex, next.currentRungIndex));
     } else {
       setTilesAndRef(buildTiles(next));
     }
   }
 
-  async function onNextPuzzle(): Promise<void> {
+  async function startPuzzle(rungCount: number): Promise<void> {
     setLoading(true);
     setError(null);
     try {
       clearFreeplayGame();
-      const fresh = await pickNewChain(progressRef.current);
+      const fresh = await loadFreeplayChain(rungCount);
       persistState(fresh);
       setTilesAndRef(buildTiles(fresh));
     } catch (e) {
@@ -181,10 +192,28 @@ export function useFreeplayPuzzle(): PuzzleController {
     }
   }
 
+  function onNextPuzzle(): Promise<void> {
+    return startPuzzle(rungCountForLevel(progressRef.current.level));
+  }
+
+  /** Starts a fresh puzzle at an explicit, already-unlocked rung count (see `unlockedRungCounts`
+   * below), bypassing the level-derived one — the "pick any length up to what I've unlocked"
+   * menu. See the onCheck completion branch above for how this interacts with level progress. */
+  function onSelectRungCount(rungCount: number): Promise<void> {
+    return startPuzzle(rungCount);
+  }
+
   const currentProgress = state?.progressByRung[state.currentRungIndex];
   const currentRung = state?.chain.rungs[state.currentRungIndex];
   const foundWords = currentProgress?.foundWords ?? [];
   const bonusWordsFound = currentRung ? foundWords.filter((w) => !currentRung.words.includes(w)) : [];
+  // Every rung count the player has reached via normal level progression so far — 3 up to
+  // whatever rungCountForLevel(progress.level) currently is — for the "pick a shorter length"
+  // menu below.
+  const unlockedRungCounts = Array.from(
+    { length: rungCountForLevel(progress.level) - MIN_RUNG_COUNT + 1 },
+    (_, i) => MIN_RUNG_COUNT + i,
+  );
 
   return {
     loading,
@@ -206,5 +235,7 @@ export function useFreeplayPuzzle(): PuzzleController {
     onHint,
     onAdvance,
     onNextPuzzle,
+    unlockedRungCounts,
+    onSelectRungCount,
   };
 }

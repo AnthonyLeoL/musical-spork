@@ -72,8 +72,8 @@ export function useDailyPuzzle(): PuzzleController {
           }
           return;
         }
-        const chains9 = await loadDailyPool();
-        const chain = pickDailyChain(chains9, dateStr);
+        const dailyChains = await loadDailyPool();
+        const chain = pickDailyChain(dailyChains, dateStr);
         const fresh = initGame(chain, dailyRng(dateStr, 0));
         if (!cancelled) {
           persist(fresh);
@@ -142,7 +142,7 @@ export function useDailyPuzzle(): PuzzleController {
     persist(next);
     if (insertedIndex !== null) {
       const rung = next.chain.rungs[next.currentRungIndex]!;
-      setTilesAndRef(insertTile(tilesRef.current, rung.addedLetter!, insertedIndex));
+      setTilesAndRef(insertTile(tilesRef.current, rung.addedLetter!, insertedIndex, next.currentRungIndex));
     } else {
       setTilesAndRef(buildTiles(next));
     }

@@ -1,8 +1,8 @@
 import { hashString, mulberry32 } from './rng';
 import type { Chain, Rng, RungCountFile } from './types';
 
-const MIN_RUNG_COUNT = 3;
-const MAX_RUNG_COUNT = 9;
+export const MIN_RUNG_COUNT = 3;
+export const MAX_RUNG_COUNT = 9;
 
 /** Every 2 completed puzzles, difficulty steps up by one rung count, capped at 9.
  * Tunable — retune by changing this one constant. */
@@ -56,15 +56,16 @@ export function dailyRng(dateStr: string, rungIndex: number): Rng {
 }
 
 /**
- * Deterministically picks that day's chain from the full rung-9 pool
- * (`progressive_anagrams_9.json`'s `chains`). Same `dateStr` always yields
- * the same chain.
+ * Deterministically picks that day's chain from the daily pool (currently the
+ * rung-7 pool, `progressive_anagrams_7.json`'s `chains` — see dataClient.ts's
+ * `loadDailyPool`). Same `dateStr` always yields the same chain; this
+ * function itself is agnostic to which rung count the pool is.
  */
-export function pickDailyChain(chains9: Chain[], dateStr: string): Chain {
-  if (chains9.length === 0) {
-    throw new Error('chains9 is empty');
+export function pickDailyChain(chains: Chain[], dateStr: string): Chain {
+  if (chains.length === 0) {
+    throw new Error('the daily chain pool is empty');
   }
   const rng = mulberry32(seedForDate(dateStr));
-  const index = Math.floor(rng() * chains9.length);
-  return chains9[Math.min(index, chains9.length - 1)]!;
+  const index = Math.floor(rng() * chains.length);
+  return chains[Math.min(index, chains.length - 1)]!;
 }

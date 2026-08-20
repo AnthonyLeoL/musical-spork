@@ -30,6 +30,8 @@ export function PuzzleBoard(controller: PuzzleController) {
     onHint,
     onAdvance,
     onNextPuzzle,
+    unlockedRungCounts,
+    onSelectRungCount,
   } = controller;
 
   // Enter checks the current arrangement — the explicit action requested
@@ -52,13 +54,21 @@ export function PuzzleBoard(controller: PuzzleController) {
   }
 
   const foundAnyWord = foundWords.length > 0;
+  // How many of foundWords are curated targets rather than bonus finds — the
+  // basis for both "all words found" below and the tiles' gold-tint progress.
+  const curatedFoundCount = foundWords.length - bonusWordsFound.length;
+  // All of this rung's curated target words have been found (bonus words
+  // aside — there's no fixed ceiling to count those against, see
+  // targetWordCount's doc comment).
+  const allTargetsFound =
+    targetWordCount > 0 && curatedFoundCount >= targetWordCount;
   // How far through this rung's *curated* target words the player is, 0–1 —
   // drives the tiles' gradual shift toward gold in LetterRack (1 of 5 target
-  // words found = 20% of the way there). Purely a flavor signal now, not a
-  // completion ceiling: submitGuess accepts any real dictionary word for the
-  // rung, so foundWords.length can exceed targetWordCount once a bonus word
-  // is found too — clamp so the tint doesn't try to go past fully gold.
-  const rungProgress = targetWordCount > 0 ? Math.min(1, foundWords.length / targetWordCount) : 0;
+  // words found = 20% of the way there). Deliberately curatedFoundCount, not
+  // foundWords.length — a bonus word found before every curated target is
+  // would otherwise inflate this toward "complete" early.
+  const rungProgress =
+    targetWordCount > 0 ? Math.min(1, curatedFoundCount / targetWordCount) : 0;
   // "(bonus)" marker for a found word that isn't one of the puzzle's curated
   // targets — a real word the pool happened to be missing (see CLAUDE.md's
   // two-list design), found via the dictionary-wide acceptance check rather
@@ -75,6 +85,25 @@ export function PuzzleBoard(controller: PuzzleController) {
           Rung {rungNumber} / {rungCount}
         </span>
       </div>
+
+      {onSelectRungCount &&
+        unlockedRungCounts &&
+        unlockedRungCounts.length > 1 && (
+          <div className="length-picker">
+            <span className="length-picker__label">Puzzle length:</span>
+            {unlockedRungCounts.map((n) => (
+              <button
+                key={n}
+                type="button"
+                className={`length-picker__button ${n === rungCount ? "length-picker__button--active" : ""}`}
+                onClick={() => onSelectRungCount(n)}
+                disabled={n === rungCount}
+              >
+                {n}
+              </button>
+            ))}
+          </div>
+        )}
 
       {isComplete ? (
         <div className="complete-panel">
@@ -112,9 +141,11 @@ export function PuzzleBoard(controller: PuzzleController) {
           >
             {checkFeedback
               ? FEEDBACK_TEXT[checkFeedback]
-              : foundAnyWord
-                ? `Found ${foundWords.length} word${foundWords.length === 1 ? "" : "s"} at this rung. Add a letter to continue, or keep searching for more.`
-                : "Drag the letters, then check your word"}
+              : allTargetsFound
+                ? "All words found at this rung! Add a letter to continue."
+                : foundAnyWord
+                  ? `Found ${curatedFoundCount} of ${targetWordCount} intended word${targetWordCount === 1 ? "" : "s"} at this rung. Keep searching, or add a letter to continue.`
+                  : "Drag the letters, then check your word"}
           </p>
 
           {foundAnyWord && (
@@ -142,7 +173,7 @@ export function PuzzleBoard(controller: PuzzleController) {
             <div className="controls-row__end">
               <button
                 type="button"
-                className={`button ${foundAnyWord ? "button--primary button--attention" : ""}`}
+                className={`button ${allTargetsFound ? "button--primary button--attention" : ""}`}
                 onClick={onAdvance}
                 disabled={!canAdvance}
               >

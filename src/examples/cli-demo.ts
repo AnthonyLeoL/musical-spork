@@ -20,11 +20,11 @@ import {
 
 function main(): void {
   const dateStr = '2026-08-13';
-  const chains9 = loadDailyPool();
-  const chain = pickDailyChain(chains9, dateStr);
+  const dailyChains = loadDailyPool();
+  const chain = pickDailyChain(dailyChains, dateStr);
 
   console.log(`Daily puzzle for ${dateStr}: ${chain.rungCount} rungs`);
-  console.log(`(chosen deterministically from ${chains9.length} rung-9 chains)\n`);
+  console.log(`(chosen deterministically from ${dailyChains.length} rung-7 chains)\n`);
 
   // Each rung gets its own independently-seeded RNG (see dailyRng), so the
   // scramble at any given rung is the same for every player regardless of

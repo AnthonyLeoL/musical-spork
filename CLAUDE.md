@@ -366,7 +366,7 @@ B: progress and add a new letter - then repeat.
 Repeats until the user has gotten to the last "rung" of the anagram (that is, there are no more
 letters that can be added to create a new valid word)
 
-there will be two sections, a "daily" play, which uses a new rungcount 9 progressive anagram.
+there will be two sections, a "daily" play, which uses a new rungcount 7 progressive anagram.
 And a freeplay.
 Free play should start with short words and shortnrungs, and gradually increase in both as users play. Progress and scores should be saved locally.
 Users should be able to share their daily "score" (score for now just copy pastes the scrambled words in order. e.g. "art" -> "sart"->"ysrart")

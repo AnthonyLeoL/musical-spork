@@ -20,9 +20,18 @@ describe('loaders (real data)', () => {
     expect(file.chains).toHaveLength(1702);
   });
 
-  it('loadDailyPool matches the rung-9 file\'s chains', () => {
+  it('loads the rung-7 file with the expected shape and count', () => {
+    const file = loadRungCountFile(7);
+    expect(file.rungCount).toBe(7);
+    expect(file.count).toBe(11393);
+    expect(file.chains).toHaveLength(11393);
+    expect(file.chains[0]!.rungCount).toBe(7);
+    expect(file.chains[0]!.rungs).toHaveLength(7);
+  });
+
+  it('loadDailyPool matches the rung-7 file\'s chains', () => {
     const pool = loadDailyPool();
-    expect(pool).toHaveLength(431);
+    expect(pool).toHaveLength(11393);
   });
 
   it('every rung has at least one word and a valid addedLetter shape', () => {

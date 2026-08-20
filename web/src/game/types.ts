@@ -6,7 +6,7 @@ import type { Tile } from './tiles';
 export interface PuzzleController {
   loading: boolean;
   error: string | null;
-  /** Short subtitle, e.g. "Daily — 9 rungs" or "Freeplay — Level 3 — 5 rungs". */
+  /** Short subtitle, e.g. "Daily — 7 rungs" or "Freeplay — Level 3 — 5 rungs". */
   label: string;
   tiles: Tile[];
   rungNumber: number; // 1-based, for display
@@ -43,4 +43,12 @@ export interface PuzzleController {
   onAdvance: () => void;
   /** Freeplay only: start a new puzzle after completing one. */
   onNextPuzzle?: () => void;
+  /** Freeplay only: every rung count unlocked so far via normal level progression (3 up to
+   * rungCountForLevel(progress.level)) — the options for the "pick a shorter length" menu. */
+  unlockedRungCounts?: number[];
+  /** Freeplay only: abandons the current puzzle and starts a fresh one at an explicit,
+   * already-unlocked rung count, bypassing the level-derived one. Completing a puzzle started
+   * this way at anything shorter than the level-derived rung count is a practice replay — it
+   * doesn't advance level/puzzlesCompleted (see useFreeplayPuzzle's onCheck). */
+  onSelectRungCount?: (rungCount: number) => void;
 }

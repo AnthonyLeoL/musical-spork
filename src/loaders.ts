@@ -24,9 +24,9 @@ export function loadRungCountFile(rungCount: SplitRungCount): RungCountFile {
   return readJsonFile<RungCountFile>(`progressive_anagrams_${rungCount}.json`);
 }
 
-/** Reads `progressive_anagrams_9.json`'s chains — the daily puzzle pool. */
+/** Reads `progressive_anagrams_7.json`'s chains — the daily puzzle pool. */
 export function loadDailyPool(): Chain[] {
-  return loadRungCountFile(9).chains;
+  return loadRungCountFile(7).chains;
 }
 
 /** Reads the full, unsplit `progressive_anagrams.json` (~45MB) — rarely needed directly;

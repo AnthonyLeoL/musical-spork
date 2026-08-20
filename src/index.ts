@@ -16,7 +16,14 @@ export type {
 
 export { hashString, mulberry32, defaultRng } from './rng';
 export { scrambleLetters, shuffleString, insertLetterAvoidingSolution, lockNextPosition } from './scramble';
-export { rungCountForLevel, pickFreeplayChain, dailyRng, pickDailyChain } from './chainSelection';
+export {
+  rungCountForLevel,
+  pickFreeplayChain,
+  dailyRng,
+  pickDailyChain,
+  MIN_RUNG_COUNT,
+  MAX_RUNG_COUNT,
+} from './chainSelection';
 export {
   initGame,
   submitGuess,

@@ -16,6 +16,29 @@
   --tile-gold-text: #4a3800;
   --error: #a4423a;
   --success: #3a6b52;
+
+  /* One color pair per rung index (0 = the starting rung's own letters, 1 = the letter added on
+   * top of it, etc.) — up to MAX_RUNG_COUNT (9) rungs, the most any chain reaches. Each tile
+   * picks its pair via `--tile-rung-bg`/`--tile-rung-border` (LetterRack.tsx), so the base color
+   * (below) shows at a glance how far through the chain a given letter has been along for. */
+  --rung-color-0-bg: #f5d6cc;
+  --rung-color-0-border: #d99a7f;
+  --rung-color-1-bg: #d3ecd9;
+  --rung-color-1-border: #8fc9a0;
+  --rung-color-2-bg: #d1e3f7;
+  --rung-color-2-border: #8bb6e8;
+  --rung-color-3-bg: #e2d6f5;
+  --rung-color-3-border: #b79ce8;
+  --rung-color-4-bg: #f7e0bf;
+  --rung-color-4-border: #e0a94f;
+  --rung-color-5-bg: #cdece9;
+  --rung-color-5-border: #6ec4bc;
+  --rung-color-6-bg: #f5d4e6;
+  --rung-color-6-border: #dd87b6;
+  --rung-color-7-bg: #ecead0;
+  --rung-color-7-border: #c3ba5c;
+  --rung-color-8-bg: #d8dcec;
+  --rung-color-8-border: #9aa6d0;
 }
 
 * {
@@ -85,6 +108,36 @@ body {
   color: var(--text-muted);
 }
 
+/* Freeplay only — lets a player jump straight to any rung count they've already unlocked via
+ * normal level progression, instead of always getting the current level's length. */
+.length-picker {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  width: 100%;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.length-picker__button {
+  min-width: 1.8rem;
+  padding: 0.2rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.length-picker__button--active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+  cursor: default;
+}
+
 .rack-scroller {
   width: 100%;
   max-width: 100%;
@@ -104,8 +157,10 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--tile-bg);
-  border: 2px solid var(--tile-border);
+  /* Base color comes from the tile's rung of origin (--tile-rung-bg/-border, set inline per
+   * tile in LetterRack.tsx) with a fallback to the old flat tile color for safety. */
+  background: var(--tile-rung-bg, var(--tile-bg));
+  border: 2px solid var(--tile-rung-border, var(--tile-border));
   border-radius: 0.5rem;
   font-size: 1.4rem;
   font-weight: 700;
@@ -132,43 +187,44 @@ body {
   cursor: default;
 }
 
-/* Tiles tint from their normal color toward gold in direct proportion to how much of the
- * rung's words have been found — 1 of 5 words found reads as 20% of the way there, 1 of 1 is
- * the full gold. `--tile-progress` (0–1) is set inline per-tile in LetterRack; color-mix does
- * the interpolation so this is one rule for every value in between, not a single found/unfound
- * flip. */
+/* Tiles brighten toward *their own* rung color (--tile-rung-bg/-border, the same color that
+ * already distinguishes which rung each letter came from) in direct proportion to how much of
+ * the rung's words have been found — 1 of 5 words found reads as 20% of the way there, 1 of 1
+ * is the full celebratory brightness. Deliberately not a shared gold for every tile: a word
+ * spans letters from different rungs (see tiles.ts's rungIndex), so converging them all to one
+ * color would erase that distinction right when it's most satisfying to see. `--tile-progress`
+ * (0–1) is set inline per-tile in LetterRack; color-mix does the interpolation so this is one
+ * rule for every value in between, not a single found/unfound flip. `--tile-gold-border`
+ * remains only as the fallback for the rare case `--tile-rung-border` isn't set. */
 .letter-tile--progress {
   --p: var(--tile-progress, 0);
   background: linear-gradient(
     145deg,
+    color-mix(in srgb, white calc(var(--p) * 55%), var(--tile-rung-bg, var(--tile-bg))),
     color-mix(
       in srgb,
-      var(--tile-gold-bg-1) calc(var(--p) * 100%),
-      var(--tile-bg)
-    ),
-    color-mix(
-      in srgb,
-      var(--tile-gold-bg-2) calc(var(--p) * 100%),
-      var(--tile-bg)
+      var(--tile-rung-border, var(--tile-gold-bg-2)) calc(var(--p) * 70%),
+      var(--tile-rung-bg, var(--tile-bg))
     )
   );
   border-color: color-mix(
     in srgb,
-    var(--tile-gold-border) calc(var(--p) * 100%),
-    var(--tile-border)
+    white calc(var(--p) * 45%),
+    var(--tile-rung-border, var(--tile-gold-border))
   );
   color: color-mix(
     in srgb,
-    var(--tile-gold-text) calc(var(--p) * 100%),
+    var(--tile-rung-border, var(--tile-gold-text)) calc(var(--p) * 70%),
     var(--text)
   );
   box-shadow: 0 0 calc(var(--p) * 16px) calc(var(--p) * 3px)
-    rgba(240, 196, 25, calc(var(--p) * 0.6));
+    color-mix(in srgb, var(--tile-rung-border, var(--tile-gold-border)) calc(var(--p) * 60%), transparent);
   transform: scale(calc(1 + var(--p) * 0.05));
 }
 
-/* Every valid word at this rung has been found — full gold with a breathing glow pulse, drawing
- * the eye toward "add a letter" instead of lingering on a rung with nothing left to check. */
+/* Every valid word at this rung has been found — full brightness with a breathing glow pulse in
+ * each tile's own rung color (not a shared gold — see the comment above), drawing the eye
+ * toward "add a letter" instead of lingering on a rung with nothing left to check. */
 .letter-tile--complete {
   animation: tile-glow-pulse 1.6s ease-in-out infinite;
 }
@@ -176,10 +232,12 @@ body {
 @keyframes tile-glow-pulse {
   0%,
   100% {
-    box-shadow: 0 0 10px 2px rgba(240, 196, 25, 0.45);
+    box-shadow: 0 0 10px 2px
+      color-mix(in srgb, var(--tile-rung-border, var(--tile-gold-border)) 45%, transparent);
   }
   50% {
-    box-shadow: 0 0 24px 7px rgba(240, 196, 25, 0.85);
+    box-shadow: 0 0 24px 7px
+      color-mix(in srgb, var(--tile-rung-border, var(--tile-gold-border)) 85%, transparent);
   }
 }
 
@@ -364,8 +422,9 @@ body {
 }
 
 /* All words found at this rung — nothing left to check, so draw the eye to
- * the one action that's actually still useful. Gold to match the tiles' own
- * fully-found state (letter-tile--complete) rather than a different color. */
+ * the one action that's actually still useful. This is a single button (not
+ * one tile among several rung colors), so a fixed gold pulse stays as its
+ * own distinct "go" color rather than tying it to any one rung's color. */
 .button--attention {
   animation: button-attention-pulse 1.6s ease-in-out infinite;
 }

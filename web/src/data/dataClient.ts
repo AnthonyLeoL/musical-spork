@@ -29,9 +29,9 @@ export function loadRungCountFile(rungCount: number): Promise<RungCountFile> {
   return pending;
 }
 
-/** The daily pool is always the rung-9 chains. */
+/** The daily pool is always the rung-7 chains. */
 export async function loadDailyPool(): Promise<Chain[]> {
-  const file = await loadRungCountFile(9);
+  const file = await loadRungCountFile(7);
   return file.chains;
 }
 

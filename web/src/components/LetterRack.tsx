@@ -1,10 +1,23 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
+import { MAX_RUNG_COUNT } from 'anagram-game-engine';
 import type { Tile } from '../game/tiles';
 
 /** Custom properties aren't in React's CSSProperties type, so tile styles that set
  * `--tile-progress` (read by the color-mix/glow rules in styles.css) need this escape hatch. */
-type TileStyle = CSSProperties & { '--tile-progress'?: number };
+type TileStyle = CSSProperties & {
+  '--tile-progress'?: number;
+  '--tile-rung-bg'?: string;
+  '--tile-rung-border'?: string;
+};
+
+/** styles.css defines one `--rung-color-N-bg`/`--rung-color-N-border` pair per index from 0 up
+ * to MAX_RUNG_COUNT - 1 (a chain never has more rungs than that) — this just points each tile
+ * at its pair by name; the actual colors live in styles.css so they stay themeable in one place. */
+function rungColorVars(rungIndex: number): { bg: string; border: string } {
+  const idx = Math.min(rungIndex, MAX_RUNG_COUNT - 1);
+  return { bg: `var(--rung-color-${idx}-bg)`, border: `var(--rung-color-${idx}-border)` };
+}
 
 const TILE_SIZE = 56;
 const GAP = 10;
@@ -176,6 +189,8 @@ export function LetterRack({
                 fontSize,
                 left,
                 '--tile-progress': progress,
+                '--tile-rung-bg': rungColorVars(tile.rungIndex).bg,
+                '--tile-rung-border': rungColorVars(tile.rungIndex).border,
               } as TileStyle
             }
           >
