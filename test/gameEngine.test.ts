@@ -82,6 +82,40 @@ describe('submitGuess', () => {
     expect(second.state.progressByRung[0]!.foundWords).toEqual(['rat', 'tar']);
   });
 
+  it('rejects a real word missing from rung.words when no acceptedWords is passed', () => {
+    // 'tra' isn't a word at all, but this asserts the *default* (no third
+    // arg) behavior stays exactly what it was before acceptedWords existed.
+    const result = submitGuess(state, 'zzz', undefined);
+    expect(result.outcome).toBe('incorrect');
+  });
+
+  it('accepts a word that is only in acceptedWords, not in rung.words', () => {
+    // 'art'/'rat'/'tar' are the curated rung.words; 'tra' isn't a real word,
+    // so use it as a stand-in for "some other dictionary word for this key"
+    // that the curated pool happens to be missing.
+    const result = submitGuess(state, 'tra', ['tra']);
+    expect(result.outcome).toBe('correct');
+    expect(result.state.progressByRung[0]!.foundWords).toEqual(['tra']);
+  });
+
+  it('prefers the rung.words canonical casing/entry over acceptedWords when both match', () => {
+    const result = submitGuess(state, 'rat', ['rat']);
+    expect(result.outcome).toBe('correct');
+    expect(result.state.progressByRung[0]!.foundWords).toEqual(['rat']);
+  });
+
+  it('still rejects a guess not present in either rung.words or acceptedWords', () => {
+    const result = submitGuess(state, 'zzz', ['tra']);
+    expect(result.outcome).toBe('incorrect');
+  });
+
+  it('flags a repeat of an acceptedWords-only find as alreadyFound', () => {
+    const first = submitGuess(state, 'tra', ['tra']);
+    const second = submitGuess(first.state, 'tra', ['tra']);
+    expect(second.outcome).toBe('alreadyFound');
+    expect(second.state.progressByRung[0]!.foundWords).toEqual(['tra']);
+  });
+
   it('does not complete the game at a non-last rung', () => {
     const result = submitGuess(state, 'rat');
     expect(isComplete(result.state)).toBe(false);

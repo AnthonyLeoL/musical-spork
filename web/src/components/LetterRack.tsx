@@ -20,11 +20,12 @@ interface LetterRackProps {
   tiles: Tile[];
   onReorder: (tiles: Tile[]) => void;
   disabled?: boolean;
-  /** foundWords / wordsAtRung for the current rung, 0–1. Tiles tint from their
-   * normal color toward gold in direct proportion — 1 of 5 words found is 20% of
-   * the way there, 1 of 1 is the full, fully-celebratory gold. Drives both the
-   * color-mix and the glow/scale intensity in CSS, so "more found" always just
-   * *reads* as more done, not a single flip at the end. */
+  /** foundWords.length / targetWordCount for the current rung, 0–1 (clamped —
+   * see PuzzleBoard). Tiles tint from their normal color toward gold in direct
+   * proportion — 1 of 5 target words found is 20% of the way there, 1 of 1 is
+   * the full, fully-celebratory gold. Drives both the color-mix and the
+   * glow/scale intensity in CSS, so "more found" always just *reads* as more
+   * done, not a single flip at the end. */
   progress?: number;
   /** True for the instant after a correct guess — triggers a one-shot flash/pop
    * across the rack so finding a word actually feels like something happened. */

@@ -41,6 +41,19 @@ export interface ProgressiveAnagramsFile {
   };
 }
 
+/**
+ * Shape of `accepted_words.json` — every dictionary word (not just the
+ * pool-curated `rung.words`) for each key that occurs as some chain's rung,
+ * built by `build_accepted_words.js`. `rung.words` stays the curated
+ * *target* list a puzzle was designed around (scrambling, hints, share
+ * string); this is the separate, broader *acceptance* list `submitGuess`
+ * checks a guess against, so a real word missing from the curated pool
+ * (e.g. "tare", "crates", "slag") is still accepted rather than rejected.
+ * Keyed and shaped identically to `anagrams.json`, just sourced from the
+ * full dictionary and restricted to keys that actually occur in a chain.
+ */
+export type AcceptedWordsFile = Record<string, string[]>;
+
 /** Injectable random source, `() => number` in [0, 1) — same contract as `Math.random`. */
 export type Rng = () => number;
 

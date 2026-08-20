@@ -18,7 +18,8 @@ export function PuzzleBoard(controller: PuzzleController) {
     rungNumber,
     rungCount,
     foundWords,
-    wordsAtRung,
+    targetWordCount,
+    bonusWordsFound,
     hintsUsedThisRung,
     canAdvance,
     isComplete,
@@ -50,11 +51,21 @@ export function PuzzleBoard(controller: PuzzleController) {
     return <p className="status-text status-text--error">{error}</p>;
   }
 
-  const allWordsFound = wordsAtRung > 0 && foundWords.length >= wordsAtRung;
-  const oneWordFound = foundWords.length === 1;
-  // How far through this rung the player is, 0–1 — drives the tiles' gradual
-  // shift toward gold in LetterRack (1 of 5 words found = 20% of the way there).
-  const rungProgress = wordsAtRung > 0 ? foundWords.length / wordsAtRung : 0;
+  const foundAnyWord = foundWords.length > 0;
+  // How far through this rung's *curated* target words the player is, 0–1 —
+  // drives the tiles' gradual shift toward gold in LetterRack (1 of 5 target
+  // words found = 20% of the way there). Purely a flavor signal now, not a
+  // completion ceiling: submitGuess accepts any real dictionary word for the
+  // rung, so foundWords.length can exceed targetWordCount once a bonus word
+  // is found too — clamp so the tint doesn't try to go past fully gold.
+  const rungProgress = targetWordCount > 0 ? Math.min(1, foundWords.length / targetWordCount) : 0;
+  // "(bonus)" marker for a found word that isn't one of the puzzle's curated
+  // targets — a real word the pool happened to be missing (see CLAUDE.md's
+  // two-list design), found via the dictionary-wide acceptance check rather
+  // than the intended answer list.
+  const foundWordsDisplay = foundWords
+    .map((w) => (bonusWordsFound.includes(w) ? `${w} (bonus)` : w))
+    .join(", ");
 
   return (
     <div className="puzzle-board">
@@ -101,17 +112,13 @@ export function PuzzleBoard(controller: PuzzleController) {
           >
             {checkFeedback
               ? FEEDBACK_TEXT[checkFeedback]
-              : allWordsFound
-                ? wordsAtRung > 1
-                  ? `Found all ${wordsAtRung} words! Add a letter to continue.`
-                  : "Found it! Add a letter to continue."
-                : wordsAtRung > 1
-                  ? `Found ${foundWords.length} / ${wordsAtRung} word${wordsAtRung === 1 ? "" : "s"} at this rung`
-                  : "Drag the letters, then check your word"}
+              : foundAnyWord
+                ? `Found ${foundWords.length} word${foundWords.length === 1 ? "" : "s"} at this rung. Add a letter to continue, or keep searching for more.`
+                : "Drag the letters, then check your word"}
           </p>
 
-          {foundWords.length > 0 && (
-            <p className="found-words__list">Found: {foundWords.join(", ")}</p>
+          {foundAnyWord && (
+            <p className="found-words__list">Found: {foundWordsDisplay}</p>
           )}
 
           <div className="controls-row">
@@ -128,7 +135,6 @@ export function PuzzleBoard(controller: PuzzleController) {
                 type="button"
                 className="button button--primary"
                 onClick={onCheck}
-                disabled={allWordsFound}
               >
                 Check word
               </button>
@@ -136,7 +142,7 @@ export function PuzzleBoard(controller: PuzzleController) {
             <div className="controls-row__end">
               <button
                 type="button"
-                className={`button ${oneWordFound ? "button--primary" : ""}   ${allWordsFound ? "button--primary button--attention" : ""}`}
+                className={`button ${foundAnyWord ? "button--primary button--attention" : ""}`}
                 onClick={onAdvance}
                 disabled={!canAdvance}
               >

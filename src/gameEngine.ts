@@ -59,6 +59,16 @@ export function initGame(chain: Chain, rng: Rng): GameState {
  * Doesn't touch `currentOrder` — finding a word leaves the tiles exactly as
  * the player arranged them, it doesn't rescramble anything.
  *
+ * `acceptedWords` — the current rung's entry in `accepted_words.json` (see
+ * `AcceptedWordsFile`) — is checked as a fallback whenever `guess` isn't one
+ * of the curated `rung.words`. `rung.words` stays the puzzle's *intended*
+ * target list (still what scrambling/hints/the share string are built
+ * around); `acceptedWords` is the broader "any real dictionary word for
+ * these letters" list, so a legitimate word the curated pool happens to be
+ * missing (e.g. "tare" alongside "rate"/"tear") is still accepted rather
+ * than rejected outright. Omit it (or pass `undefined`) to check only
+ * `rung.words`, e.g. in tests that don't care about the broader dictionary.
+ *
  * It does release any hint lock (`hintsUsed` resets to 0, though
  * `hintsUsedTotal` — what the share string reports — doesn't): a lock only
  * ever anchors toward one specific word (`rung.words[0]`), so once the
@@ -70,14 +80,20 @@ export function initGame(chain: Chain, rng: Rng): GameState {
  * on the player to manually advance into (see `advance`'s doc for the
  * defensive fallback on this same transition).
  */
-export function submitGuess(state: GameState, guess: string): SubmitGuessResult {
+export function submitGuess(
+  state: GameState,
+  guess: string,
+  acceptedWords?: string[],
+): SubmitGuessResult {
   if (state.status === 'complete') {
     return { state, outcome: 'incorrect' };
   }
 
   const rung = currentRung(state);
   const normalized = guess.trim().toLowerCase();
-  const canonical = rung.words.find((w) => w.toLowerCase() === normalized);
+  const canonical =
+    rung.words.find((w) => w.toLowerCase() === normalized) ??
+    acceptedWords?.find((w) => w.toLowerCase() === normalized);
 
   if (!canonical) {
     return { state, outcome: 'incorrect' };

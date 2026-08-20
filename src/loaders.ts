@@ -5,7 +5,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import type { Chain, ProgressiveAnagramsFile, RungCountFile } from './types';
+import type { AcceptedWordsFile, Chain, ProgressiveAnagramsFile, RungCountFile } from './types';
 
 // dist/loaders.js sits one level below the repo root (dist/ mirrors src/),
 // same as this file's own source location — one `..` reaches the repo root
@@ -33,4 +33,12 @@ export function loadDailyPool(): Chain[] {
  * prefer `loadRungCountFile` for a specific difficulty. */
 export function loadFullPool(): ProgressiveAnagramsFile {
   return readJsonFile<ProgressiveAnagramsFile>('progressive_anagrams.json');
+}
+
+/** Reads `accepted_words.json` — the dictionary-wide acceptance index (see
+ * `AcceptedWordsFile`), keyed the same way as `anagrams.json`. Pass
+ * `index[rung.key]` to `submitGuess` so a guess is accepted whenever it's any
+ * valid dictionary word for the rung, not only one of the curated `rung.words`. */
+export function loadAcceptedWords(): AcceptedWordsFile {
+  return readJsonFile<AcceptedWordsFile>('accepted_words.json');
 }

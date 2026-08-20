@@ -3,5 +3,5 @@
 // CLI demo); import `.` / `index.ts` from browser code.
 
 export * from './index';
-export { loadRungCountFile, loadDailyPool, loadFullPool } from './loaders';
+export { loadRungCountFile, loadDailyPool, loadFullPool, loadAcceptedWords } from './loaders';
 export type { SplitRungCount } from './loaders';

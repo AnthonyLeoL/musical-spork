@@ -11,10 +11,11 @@ import {
   setCurrentOrder,
   submitGuess,
   useHint as engineUseHint,
+  type AcceptedWordsFile,
   type GameState,
   type GuessOutcome,
 } from 'anagram-game-engine';
-import { loadDailyPool } from '../data/dataClient';
+import { loadAcceptedWords, loadDailyPool } from '../data/dataClient';
 import { loadDailyGame, saveDailyGame } from '../data/storage';
 import { todayUtcDateString } from './date';
 import { buildTiles, insertTile, tilesToGuess, unlockTiles, type Tile } from './tiles';
@@ -26,6 +27,10 @@ export function useDailyPuzzle(): PuzzleController {
   const dateStr = useMemo(() => todayUtcDateString(), []);
   const stateRef = useRef<GameState | null>(null);
   const tilesRef = useRef<Tile[]>([]);
+  // Loaded once per session, alongside the puzzle pool — populated after the
+  // initial load effect resolves; `onCheck` falls back to [] until then, so
+  // a guess made before it's ready is just checked against rung.words only.
+  const acceptedWordsRef = useRef<AcceptedWordsFile>({});
   const [state, setState] = useState<GameState | null>(null);
   const [tiles, setTiles] = useState<Tile[]>([]);
   const [loading, setLoading] = useState(true);
@@ -52,6 +57,13 @@ export function useDailyPuzzle(): PuzzleController {
     let cancelled = false;
     async function load() {
       try {
+        // Needed either way (a resumed save still needs it for the next
+        // onCheck), so load it up front rather than duplicating this call
+        // in both branches below.
+        loadAcceptedWords().then((words) => {
+          if (!cancelled) acceptedWordsRef.current = words;
+        });
+
         const saved = loadDailyGame(dateStr);
         if (saved) {
           if (!cancelled) {
@@ -96,7 +108,9 @@ export function useDailyPuzzle(): PuzzleController {
   function onCheck(): void {
     const current = stateRef.current;
     if (!current || current.status !== 'in-progress') return;
-    const result = submitGuess(current, tilesToGuess(tilesRef.current));
+    const rung = current.chain.rungs[current.currentRungIndex]!;
+    const acceptedWords = acceptedWordsRef.current[rung.key];
+    const result = submitGuess(current, tilesToGuess(tilesRef.current), acceptedWords);
     flashFeedback(result.outcome);
     if (result.outcome === 'correct') {
       // Deliberately don't rebuild `tiles` — the player's own arrangement
@@ -136,6 +150,8 @@ export function useDailyPuzzle(): PuzzleController {
 
   const currentProgress = state?.progressByRung[state.currentRungIndex];
   const currentRung = state?.chain.rungs[state.currentRungIndex];
+  const foundWords = currentProgress?.foundWords ?? [];
+  const bonusWordsFound = currentRung ? foundWords.filter((w) => !currentRung.words.includes(w)) : [];
 
   return {
     loading,
@@ -144,8 +160,9 @@ export function useDailyPuzzle(): PuzzleController {
     tiles,
     rungNumber: (state?.currentRungIndex ?? 0) + 1,
     rungCount: state?.chain.rungCount ?? 0,
-    foundWords: currentProgress?.foundWords ?? [],
-    wordsAtRung: currentRung?.words.length ?? 0,
+    foundWords,
+    targetWordCount: currentRung?.words.length ?? 0,
+    bonusWordsFound,
     hintsUsedThisRung: currentProgress?.hintsUsedTotal ?? 0,
     canAdvance: state ? engineCanAdvance(state) : false,
     isComplete: state ? engineIsComplete(state) : false,

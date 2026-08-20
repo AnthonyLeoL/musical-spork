@@ -13,11 +13,12 @@ import {
   setCurrentOrder,
   submitGuess,
   useHint as engineUseHint,
+  type AcceptedWordsFile,
   type FreeplayProgress,
   type GameState,
   type GuessOutcome,
 } from 'anagram-game-engine';
-import { loadRungCountFile } from '../data/dataClient';
+import { loadAcceptedWords, loadRungCountFile } from '../data/dataClient';
 import {
   clearFreeplayGame,
   loadFreeplayGame,
@@ -41,6 +42,9 @@ export function useFreeplayPuzzle(): PuzzleController {
   const stateRef = useRef<GameState | null>(null);
   const tilesRef = useRef<Tile[]>([]);
   const progressRef = useRef<FreeplayProgress>(initialFreeplayProgress());
+  // Loaded once per session (see useDailyPuzzle's identical ref) — onCheck
+  // falls back to [] until this resolves.
+  const acceptedWordsRef = useRef<AcceptedWordsFile>({});
   const [state, setState] = useState<GameState | null>(null);
   const [progress, setProgress] = useState<FreeplayProgress>(progressRef.current);
   const [tiles, setTiles] = useState<Tile[]>([]);
@@ -74,6 +78,12 @@ export function useFreeplayPuzzle(): PuzzleController {
     let cancelled = false;
     async function load() {
       try {
+        // Needed either way (a resumed save still needs it for the next
+        // onCheck), so load it up front rather than duplicating this call.
+        loadAcceptedWords().then((words) => {
+          if (!cancelled) acceptedWordsRef.current = words;
+        });
+
         const savedProgress = loadFreeplayProgress() ?? initialFreeplayProgress();
         progressRef.current = savedProgress;
         if (!cancelled) setProgress(savedProgress);
@@ -117,7 +127,9 @@ export function useFreeplayPuzzle(): PuzzleController {
   function onCheck(): void {
     const current = stateRef.current;
     if (!current || current.status !== 'in-progress') return;
-    const result = submitGuess(current, tilesToGuess(tilesRef.current));
+    const rung = current.chain.rungs[current.currentRungIndex]!;
+    const acceptedWords = acceptedWordsRef.current[rung.key];
+    const result = submitGuess(current, tilesToGuess(tilesRef.current), acceptedWords);
     flashFeedback(result.outcome);
     if (result.outcome === 'correct') {
       // Deliberately don't rebuild `tiles` — the player's own arrangement
@@ -171,6 +183,8 @@ export function useFreeplayPuzzle(): PuzzleController {
 
   const currentProgress = state?.progressByRung[state.currentRungIndex];
   const currentRung = state?.chain.rungs[state.currentRungIndex];
+  const foundWords = currentProgress?.foundWords ?? [];
+  const bonusWordsFound = currentRung ? foundWords.filter((w) => !currentRung.words.includes(w)) : [];
 
   return {
     loading,
@@ -179,8 +193,9 @@ export function useFreeplayPuzzle(): PuzzleController {
     tiles,
     rungNumber: (state?.currentRungIndex ?? 0) + 1,
     rungCount: state?.chain.rungCount ?? 0,
-    foundWords: currentProgress?.foundWords ?? [],
-    wordsAtRung: currentRung?.words.length ?? 0,
+    foundWords,
+    targetWordCount: currentRung?.words.length ?? 0,
+    bonusWordsFound,
     hintsUsedThisRung: currentProgress?.hintsUsedTotal ?? 0,
     canAdvance: state ? engineCanAdvance(state) : false,
     isComplete: state ? engineIsComplete(state) : false,

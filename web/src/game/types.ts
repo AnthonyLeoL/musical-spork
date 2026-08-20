@@ -11,8 +11,23 @@ export interface PuzzleController {
   tiles: Tile[];
   rungNumber: number; // 1-based, for display
   rungCount: number;
+  /** Every word found at the current rung so far, in the order found —
+   * both curated (`targetWordCount`) and bonus (`bonusWordsFound`) finds,
+   * since submitGuess now accepts any dictionary word for the rung's
+   * letters, not only the puzzle's intended target words (see CLAUDE.md's
+   * two-list design). Uncapped — there's no longer a fixed "N of M" ceiling
+   * to display, since a rung's true acceptable-word count isn't known
+   * upfront the way the curated one is. */
   foundWords: string[];
-  wordsAtRung: number; // total valid words for this rung (may be > foundWords.length)
+  /** How many of `foundWords` are curated `rung.words` (the puzzle's intended
+   * targets), used only to drive the LetterRack gold-tint animation — not
+   * displayed as a target count in the UI, since bonus words mean there's no
+   * longer a fixed ceiling to display as "N of M". */
+  targetWordCount: number;
+  /** Subset of `foundWords` that are valid dictionary words for this rung but
+   * weren't in the curated `rung.words` target list — real finds the pool
+   * happened to be missing (e.g. "tare" alongside "rate"/"tear"). */
+  bonusWordsFound: string[];
   hintsUsedThisRung: number;
   canAdvance: boolean;
   isComplete: boolean;

@@ -3,9 +3,10 @@
 // duplicated on disk) and caches each one in memory for the session — a
 // rung-count file is only ever fetched once, even across daily + freeplay.
 
-import type { Chain, RungCountFile } from 'anagram-game-engine';
+import type { AcceptedWordsFile, Chain, RungCountFile } from 'anagram-game-engine';
 
 const cache = new Map<number, Promise<RungCountFile>>();
+let acceptedWordsCache: Promise<AcceptedWordsFile> | null = null;
 
 async function fetchRungCountFile(rungCount: number): Promise<RungCountFile> {
   // BASE_URL (Vite's `base` config) rather than a hardcoded leading slash —
@@ -32,4 +33,19 @@ export function loadRungCountFile(rungCount: number): Promise<RungCountFile> {
 export async function loadDailyPool(): Promise<Chain[]> {
   const file = await loadRungCountFile(9);
   return file.chains;
+}
+
+/** Loads (and caches, once per session — shared by daily + freeplay) the
+ * dictionary-wide acceptance index `submitGuess` checks a guess against
+ * whenever it isn't one of the current rung's curated `words`. */
+export function loadAcceptedWords(): Promise<AcceptedWordsFile> {
+  if (!acceptedWordsCache) {
+    acceptedWordsCache = fetch(`${import.meta.env.BASE_URL}data/accepted_words.json`).then((response) => {
+      if (!response.ok) {
+        throw new Error(`Failed to load accepted-words data: ${response.status}`);
+      }
+      return response.json() as Promise<AcceptedWordsFile>;
+    });
+  }
+  return acceptedWordsCache;
 }
